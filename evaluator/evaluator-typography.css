@@ -1,0 +1,135 @@
+.evaluator-layout {
+  --ev-font-family: 'Poppins', 'Inter', system-ui, sans-serif;
+  --ev-page-title-size: 32px;
+  --ev-section-title-size: 21px;
+  --ev-card-title-size: 15px;
+  --ev-body-size: 15px;
+  --ev-label-size: 12px;
+  --ev-control-size: 14px;
+  --ev-nav-size: 14px;
+  --ev-sidebar-label-size: 10px;
+  --ev-table-heading-size: 12px;
+  --ev-table-content-size: 13px;
+  --ev-button-size: 13px;
+  --ev-helper-size: 12px;
+  font-family: var(--ev-font-family);
+  font-size: var(--ev-body-size);
+}
+
+.evaluator-layout .main-content,
+.evaluator-layout .main-content input,
+.evaluator-layout .main-content select,
+.evaluator-layout .main-content textarea,
+.evaluator-layout .main-content button {
+  font-family: var(--ev-font-family);
+}
+
+.evaluator-layout .main-header-text h1 {
+  font-size: var(--ev-page-title-size);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.6px;
+}
+
+.evaluator-layout .main-header-text p,
+.evaluator-layout .work-panel-head p,
+.evaluator-layout .empty-state p,
+.evaluator-layout .profile-hero p,
+.evaluator-layout .evaluation-guidance {
+  font-size: var(--ev-body-size);
+  line-height: 1.55;
+}
+
+.evaluator-layout .sidebar-nav li a {
+  font-family: var(--ev-font-family);
+  font-size: var(--ev-nav-size);
+}
+
+.evaluator-layout .sidebar-nav .nav-section-label {
+  font-size: var(--ev-sidebar-label-size);
+}
+
+.evaluator-layout .main-content .work-panel-head h2,
+.evaluator-layout .main-content .evaluation-card-heading h2,
+.evaluator-layout .main-content .table-container > h3 {
+  font-size: var(--ev-section-title-size);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.evaluator-layout .main-content .profile-hero h2,
+.evaluator-layout .main-content .empty-state h3,
+.evaluator-layout .main-content .confirm-dialog h3,
+.evaluator-layout .main-content .card-title {
+  font-size: var(--ev-card-title-size);
+  line-height: 1.4;
+}
+
+.evaluator-layout .main-content .metric-copy span,
+.evaluator-layout .main-content .filter-field label,
+.evaluator-layout .main-content .profile-field label,
+.evaluator-layout .main-content .evaluation-field-label,
+.evaluator-layout .main-content .evaluation-meta dt {
+  font-size: var(--ev-label-size);
+  line-height: 1.4;
+}
+
+.evaluator-layout .main-content .filter-field input,
+.evaluator-layout .main-content .filter-field select,
+.evaluator-layout .main-content .profile-field input,
+.evaluator-layout .main-content .evaluation-field input[type="number"],
+.evaluator-layout .main-content .evaluation-field textarea {
+  font-size: var(--ev-control-size);
+}
+
+.evaluator-layout .main-content .data-table th,
+.evaluator-layout .main-content .table-container th {
+  font-size: var(--ev-table-heading-size);
+  line-height: 1.4;
+}
+
+.evaluator-layout .main-content .data-table td,
+.evaluator-layout .main-content .table-container td {
+  font-size: var(--ev-table-content-size);
+  line-height: 1.5;
+}
+
+.evaluator-layout .main-content .status-pill,
+.evaluator-layout .main-content .type-pill,
+.evaluator-layout .main-content .action-link,
+.evaluator-layout .main-content .assigned-count,
+.evaluator-layout .main-content .evaluation-meta dd,
+.evaluator-layout .main-content .evaluation-link,
+.evaluator-layout .main-content .evaluation-actions .btn,
+.evaluator-layout .main-content .confirm-actions .btn,
+.evaluator-layout .main-content .profile-form .btn,
+.evaluator-layout .main-content .btn,
+.evaluator-layout .main-content .filter-reset {
+  font-size: var(--ev-button-size);
+}
+
+.evaluator-layout .main-content .filter-reset,
+.evaluator-layout .main-content .pagination button,
+.evaluator-layout .main-content .page-size,
+.evaluator-layout .main-content .page-size select {
+  font-size: var(--ev-control-size);
+}
+
+.evaluator-layout .main-content .page-eyebrow,
+.evaluator-layout .main-content .evaluation-step {
+  font-size: var(--ev-helper-size);
+}
+
+.evaluator-layout .main-content .filter-field input,
+.evaluator-layout .main-content .filter-field select,
+.evaluator-layout .main-content .profile-field input,
+.evaluator-layout .main-content .pagination button,
+.evaluator-layout .main-content .page-size select {
+  font-family: var(--ev-font-family);
+}
+
+@media (max-width: 720px) {
+  .evaluator-layout .main-header-text h1 {
+    font-size: 30px;
+  }
+}
