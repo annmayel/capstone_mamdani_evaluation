@@ -1,0 +1,7 @@
+{
+  "name": "capstone/fuzzy-eval-runtime",
+  "description": "Runtime PHP extension requirements for Capstone Fuzzy",
+  "require": {
+    "ext-pdo_mysql": "*"
+  }
+}
