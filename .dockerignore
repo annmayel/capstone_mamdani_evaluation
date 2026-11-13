@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+/sql
+/profile_dev
+/php/vendor
+/php/check_users.php
+/dean/setup_passwords.php
+/tools/set_user_password.php
+/storage/submissions/*
+!/storage/submissions/.htaccess

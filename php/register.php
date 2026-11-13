@@ -121,16 +121,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		require_once __DIR__ . '/email_notifications.php';
 		$userId = (int) $pdo->lastInsertId();
 		$registeredLoginId = $role === 'student' ? $studentIdNumber : $employeeIdNumber;
-		notify_user_once($pdo, $userId, 'account-registered:' . $userId, 'Account registration received', 'Your Capstone Fuzzy account has been created. Sign in with your registered ID Number and password.', 'index.php');
+		notify_user_once($pdo, $userId, 'account-registered:' . $userId, 'Account registration received', 'Your Capstone Evaluation System account has been created. Sign in with your registered ID Number and password.', 'index.php');
 		fuzzy_email_notify($pdo, [
 			'event_key' => 'account_registered:' . $userId,
 			'event_type' => 'account_registered',
 			'recipient_user_id' => $userId,
 			'recipient_email' => $email,
 			'recipient_name' => $fullName,
-			'subject' => 'Your Capstone Fuzzy account is registered',
+			'subject' => 'Your Capstone Evaluation System account is registered',
 			'heading' => 'Account registration received',
-			'intro' => 'Your Capstone Fuzzy Portal account has been created. Sign in with your registered ID Number and password.',
+			'intro' => 'Your Capstone Evaluation System account has been created. Sign in with your registered ID Number and password.',
 			'sections' => [[
 				'title' => 'Account details',
 				'rows' => [['Role', ucfirst($role)], ['Account ID', $accountId]],
@@ -161,7 +161,7 @@ $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 	<header class="register-header">
 		<a class="register-brand" href="index.php" aria-label="Back to home">
 			<span class="register-brand-mark">F</span>
-			<span><strong>CAPSTONE <b>FUZZY</b></strong><small>BSIT CAPSTONE PORTAL</small></span>
+			<span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
 		</a>
 		<nav class="register-nav" aria-label="Register navigation">
 			<a href="index.php#about">About</a>

@@ -45,15 +45,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Capstone Fuzzy</title>
+  <title>Capstone Evaluation System</title>
   <link rel="stylesheet" href="assets/style.css?v=20260918">
   <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
 <body class="home-page">
   <header class="home-header">
-    <a class="home-brand" href="#home" aria-label="Capstone Fuzzy home">
+    <a class="home-brand" href="#home" aria-label="Capstone Evaluation System home">
       <span class="brand-mark">△</span>
-      <span><strong>CAPSTONE FUZZY</strong><small>BSIT CAPSTONE PORTAL</small></span>
+      <span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
     </a>
     <button class="home-menu" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button>
     <nav class="home-nav" aria-label="Main navigation">
@@ -177,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <section class="contact-band" id="contact"><div><p class="section-label light-label">05 / CONTACT</p><h2>Questions about<br><em>the evaluation?</em></h2></div><div><p>Fuzzy Score Capstone Evaluation System</p><p>Caraga State University - Cabadbaran Campus</p><p class="contact-muted">Official contact information will be provided by the project administrators.</p></div></section>
   </main>
 
-  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><span class="brand-mark">F</span><span><strong>FUZZY SCORE</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>&copy; 2026 Fuzzy Score</span><span>Caraga State University - Cabadbaran Campus</span></div></footer>
+  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><span class="brand-mark">F</span><span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>&copy; 2026 Fuzzy Score</span><span>Caraga State University - Cabadbaran Campus</span></div></footer>
   <script>
     const menuButton = document.querySelector('.home-menu');
     const navigation = document.querySelector('.home-nav');

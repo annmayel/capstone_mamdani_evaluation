@@ -10,3 +10,5 @@
 /php/check_users.php
 /dean/setup_passwords.php
 /tools/set_user_password.php
+/sql/*.sql
+!/sql/capstone_fuzzy_eval_railway_schema.sql

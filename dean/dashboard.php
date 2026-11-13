@@ -102,14 +102,14 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
 
 ?>
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dean Dashboard</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Capstone Evaluation System - IT Chairperson Portal</title>
 <link rel="stylesheet" href="../assets/style.css?v=20261112"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
 <body class="dean-dashboard">
   <div class="dashboard-layout dean-dashboard-layout">
     <div class="sidebar">
       <div class="sidebar-header">
         <div class="logo-icon" aria-hidden="true">△</div>
-        <div>Capstone <span>Fuzzy</span></div>
+        <div>Capstone <span>Evaluation System</span></div>
         <button class="dean-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
       </div>
       <ul class="sidebar-nav">
@@ -147,7 +147,7 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
     <button class="dean-sidebar-backdrop" type="button" aria-label="Close navigation" tabindex="-1" hidden></button>
     <div class="main-content">
       <header class="dean-topbar">
-        <div class="dean-topbar-title"><strong id="dean-page-title">Dean Dashboard</strong><small>Capstone evaluation management</small></div>
+        <div class="dean-topbar-title"><strong id="dean-page-title">IT Chairperson Dashboard</strong><small>Capstone Evaluation System</small></div>
         <div class="dean-topbar-actions">
           <button class="dean-notification-button" type="button" aria-label="View notifications" onclick="return showSection('notifications')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><?php if ($unreadNotifications): ?><span><?=esc($unreadNotifications)?></span><?php endif; ?></button>
           <details class="dean-account-menu"><summary><span class="dean-account-avatar"><?=esc(strtoupper(substr((string) ($deanProfile['full_name'] ?? 'D'), 0, 1)))?></span><span><strong><?=esc($deanProfile['full_name'] ?: 'Dean')?></strong><small>Dean</small></span><i aria-hidden="true"></i></summary><div class="dean-account-links"><a href="#profile" onclick="return showSection('profile')">My profile</a><a href="../logout.php">Sign out</a></div></details>

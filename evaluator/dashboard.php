@@ -37,7 +37,7 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Evaluator Dashboard</title>
+  <title>Capstone Evaluation System - Evaluator Portal</title>
   <link rel="stylesheet" href="../assets/style.css?v=20260918">
   <link rel="stylesheet" href="evaluator-typography.css?v=20261112">
 <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
@@ -49,8 +49,8 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
         <div class="logo-icon" aria-hidden="true"></div>
         <div class="brand-copy">
           <span class="brand-line">CAPSTONE</span>
-          <span class="brand-line brand-emphasis">FUZZY</span>
-          <small>EVALUATOR</small>
+          <span class="brand-line brand-emphasis">EVALUATION SYSTEM</span>
+          <small>EVALUATOR PORTAL</small>
         </div>
       </div>
       <ul class="sidebar-nav">

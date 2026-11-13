@@ -180,8 +180,8 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
         <div class="logo-icon" aria-hidden="true"></div>
         <div class="brand-copy">
           <span class="brand-line">CAPSTONE</span>
-          <span class="brand-line brand-emphasis">FUZZY</span>
-          <small>EVALUATOR</small>
+          <span class="brand-line brand-emphasis">EVALUATION SYSTEM</span>
+          <small>EVALUATOR PORTAL</small>
         </div>
       </div>
       <ul class="sidebar-nav">

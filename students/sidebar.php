@@ -21,9 +21,9 @@ $sidebarSections = [
 ?>
 <aside class="student-sidebar" id="student-sidebar">
   <div class="student-brand-row">
-    <a class="student-brand" href="student_dashboard.php?view=overview" aria-label="Capstone Fuzzy student dashboard">
-      <span class="student-brand-mark" aria-hidden="true"></span>
-      <span class="student-brand-copy"><strong>CAPSTONE FUZZY</strong><small>STUDENT PORTAL</small></span>
+    <a class="student-brand" href="student_dashboard.php?view=overview" aria-label="Capstone Evaluation System student dashboard">
+      <span class="student-brand-mark" aria-hidden="true">CE</span>
+      <span class="student-brand-copy"><strong>CAPSTONE EVALUATION SYSTEM</strong><small>STUDENT PORTAL</small></span>
     </a>
     <button class="student-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-controls="student-nav" aria-expanded="true" title="Collapse sidebar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 18-6-6 6-6"/></svg>

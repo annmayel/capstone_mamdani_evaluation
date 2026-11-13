@@ -70,16 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Capstone Fuzzy</title>
+  <title>Capstone Evaluation System - BSIT Capstone Portal</title>
   <link rel="stylesheet" href="assets/style.css?v=20261113a">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" type="image/png" href="favicon.png?v=20261104">
 </head>
 <body class="home-page">
   <header class="home-header">
-    <a class="home-brand" href="#home" aria-label="Capstone Fuzzy home">
+    <a class="home-brand" href="#home" aria-label="Capstone Evaluation System home">
       <span class="brand-mark">△</span>
-      <span><strong>CAPSTONE FUZZY</strong><small>BSIT CAPSTONE PORTAL</small></span>
+      <span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
     </a>
     <button class="home-menu" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button>
     <nav class="home-nav" aria-label="Main navigation">
@@ -173,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="section-label">03 / PEOPLE IN THE SYSTEM</div>
       <div class="section-heading-row"><h2>One platform.<br><em>Clear roles.</em></h2><p>Each actor sees the tools and information needed for their part in the evaluation workflow.</p></div>
       <div class="actors-grid">
-        <article><span class="actor-number">01</span><div class="actor-icon">D</div><h3>Administrator</h3><p>Manages users, projects, evaluator assignments, fuzzy rules, membership functions, analytics, and reports.</p><a href="#login">Administrator access <span>-&gt;</span></a></article>
+        <article><span class="actor-number">01</span><div class="actor-icon">D</div><h3>IT Chairperson</h3><p>Manages users, projects, evaluator assignments, fuzzy rules, membership functions, analytics, and reports.</p><a href="#login">IT Chairperson access <span>-&gt;</span></a></article>
         <article><span class="actor-number">02</span><div class="actor-icon">E</div><h3>Evaluator</h3><p>Evaluates assigned capstone projects and papers, then records feedback for the project team.</p><a href="#login">Evaluator access <span>-&gt;</span></a></article>
         <article><span class="actor-number">03</span><div class="actor-icon">S</div><h3>Defendee</h3><p>Views capstone status, scores, feedback, history, and the fuzzy explanation behind the result.</p><a href="#login">Student access <span>-&gt;</span></a></article>
       </div>
@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <section class="contact-band" id="contact"><div><p class="section-label light-label">05 / CONTACT</p><h2>Questions about<br><em>the evaluation?</em></h2></div><div><p>Fuzzy Score Capstone Evaluation System</p><p>Caraga State University - Cabadbaran Campus</p><p class="contact-muted">Official contact information will be provided by the project administrators.</p></div></section>
   </main>
 
-  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><span class="brand-mark">F</span><span><strong>FUZZY SCORE</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>In compliance with the principles of the Data Privacy Act of 2012 (Republic Act No. 10173).</span></div><div class="footer-links"><a href="privacy_notice.php">Privacy Notice</a><a href="terms_of_use.php">Terms of Use</a><a href="data_protection.php">Data Protection</a><a href="security_guidelines.php">Security Guidelines</a><a href="#contact">Contact / Report a Security Concern</a></div></footer>
+  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><span class="brand-mark">F</span><span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>In compliance with the principles of the Data Privacy Act of 2012 (Republic Act No. 10173).</span></div><div class="footer-links"><a href="privacy_notice.php">Privacy Notice</a><a href="terms_of_use.php">Terms of Use</a><a href="data_protection.php">Data Protection</a><a href="security_guidelines.php">Security Guidelines</a><a href="#contact">Contact / Report a Security Concern</a></div></footer>
   <script>
     const menuButton = document.querySelector('.home-menu');
     const navigation = document.querySelector('.home-nav');

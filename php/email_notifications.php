@@ -29,7 +29,7 @@ function fuzzy_email_render(string $recipientName, string $heading, string $intr
 {
 	$html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
 		. '<body style="margin:0;background:#f4f6f5;font-family:Arial,sans-serif;color:#173b43"><div style="max-width:680px;margin:24px auto;padding:0 14px">'
-		. '<div style="padding:20px 24px;background:#0d3037;color:#fff;border-radius:10px 10px 0 0"><strong style="font-size:16px;letter-spacing:1px">CAPSTONE FUZZY</strong><div style="margin-top:5px;color:#d4a47d;font-size:11px">STUDENT PORTAL</div></div>'
+		. '<div style="padding:20px 24px;background:#0d3037;color:#fff;border-radius:10px 10px 0 0"><strong style="font-size:16px;letter-spacing:1px">CAPSTONE EVALUATION SYSTEM</strong><div style="margin-top:5px;color:#d4a47d;font-size:11px">STUDENT PORTAL</div></div>'
 		. '<main style="padding:24px;background:#fff;border:1px solid #dce6e5;border-top:0;border-radius:0 0 10px 10px">'
 		. '<p style="margin:0 0 8px;color:#b58863;font-size:11px;font-weight:bold;text-transform:uppercase">Portal notification</p>'
 		. '<h1 style="margin:0 0 12px;font-size:22px;color:#123b43">' . fuzzy_email_escape($heading) . '</h1>'
@@ -57,7 +57,7 @@ function fuzzy_email_render(string $recipientName, string $heading, string $intr
 		$html .= '<p style="margin:24px 0 10px"><a href="' . fuzzy_email_escape($url) . '" style="display:inline-block;padding:11px 16px;border-radius:6px;background:#b58863;color:#fff;text-decoration:none;font-weight:bold;font-size:12px">View in Capstone Portal</a></p>';
 		$text .= "\nView in Capstone Portal: " . $url . "\n";
 	}
-	$html .= '<p style="margin:22px 0 0;color:#87999a;font-size:11px;line-height:1.5">This is an automated message from the Capstone Fuzzy Student Portal. Do not reply to this email.</p></main></div></body></html>';
+	$html .= '<p style="margin:22px 0 0;color:#87999a;font-size:11px;line-height:1.5">This is an automated message from the Capstone Evaluation System Student Portal. Do not reply to this email.</p></main></div></body></html>';
 
 	return [$html, $text];
 }

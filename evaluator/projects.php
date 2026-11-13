@@ -16,7 +16,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
   <aside class="sidebar evaluator-sidebar" id="evaluator-sidebar" aria-label="Evaluator navigation">
     <div class="sidebar-header">
       <div class="logo-icon" aria-hidden="true"></div>
-      <div class="brand-copy"><span class="brand-line">CAPSTONE</span><span class="brand-line brand-emphasis">FUZZY</span><small>EVALUATOR</small></div>
+      <div class="brand-copy"><span class="brand-line">CAPSTONE</span><span class="brand-line brand-emphasis">EVALUATION SYSTEM</span><small>EVALUATOR PORTAL</small></div>
     </div>
     <ul class="sidebar-nav">
       <li class="nav-section-label">Workspace</li>

@@ -45,7 +45,7 @@ $displayStatus = $latestSubmission
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Project Submission - BSIT Capstone Portal</title>
+  <title>Project Submission - Capstone Evaluation System - Student Portal</title>
   <link rel="stylesheet" href="/Fuzzy_Score/assets/style.css?v=20261011">
   <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
 </head>
@@ -54,7 +54,7 @@ $displayStatus = $latestSubmission
   <?php require __DIR__ . '/sidebar.php'; ?>
   <main class="student-main">
     <header class="student-topbar">
-      <div><span class="eyebrow">BSIT CAPSTONE PROJECT</span><strong>Student Portal</strong></div>
+      <div><span class="eyebrow">CAPSTONE EVALUATION SYSTEM</span><strong>Student Portal</strong></div>
       <div class="student-account"><span class="student-avatar"><?=esc($initial)?></span><span><strong><?=esc($displayName)?></strong><small>Student</small></span></div>
     </header>
     <div class="student-content">
