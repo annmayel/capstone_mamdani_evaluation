@@ -6,7 +6,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git unzip libzip-dev libonig-dev libxml2-dev \
     && docker-php-ext-install pdo_mysql mbstring dom zip \
     && rm -rf /var/lib/apt/lists/* \
-    && a2enmod rewrite
+    && a2dismod -f mpm_event mpm_worker \
+    && a2enmod mpm_prefork rewrite
 
 WORKDIR /var/www/html
 
