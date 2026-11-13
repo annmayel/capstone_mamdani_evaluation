@@ -1,5 +1,7 @@
 /config.php
-/php/config.php
+.env
+.env.*
+!.env.example
 /storage/submissions/*
 !/storage/submissions/.htaccess
 /php/vendor/
