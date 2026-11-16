@@ -20,10 +20,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Remove all enabled Apache MPM configurations
-# Enable only prefork MPM and rewrite module
 RUN rm -f /etc/apache2/mods-enabled/mpm_*.load \
           /etc/apache2/mods-enabled/mpm_*.conf \
     && a2enmod mpm_prefork rewrite
+
+# Diagnostic: verify Apache MPM configuration
+RUN echo "=== APACHE MPM CONFIGURATION ===" \
+    && ls -la /etc/apache2/mods-enabled/mpm_* \
+    && apache2ctl -M
 
 # Set working directory
 WORKDIR /var/www/html
