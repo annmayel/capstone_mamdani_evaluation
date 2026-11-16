@@ -19,10 +19,11 @@ RUN apt-get update \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
-# Ensure only Apache prefork MPM is enabled
-RUN a2dismod mpm_event mpm_worker 2>/dev/null || true
-
-RUN a2enmod mpm_prefork rewrite
+# Remove all enabled Apache MPM configurations
+# Enable only prefork MPM and rewrite module
+RUN rm -f /etc/apache2/mods-enabled/mpm_*.load \
+          /etc/apache2/mods-enabled/mpm_*.conf \
+    && a2enmod mpm_prefork rewrite
 
 # Set working directory
 WORKDIR /var/www/html
