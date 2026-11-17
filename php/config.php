@@ -123,6 +123,71 @@ try {
         ]
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | OPTIONAL SCHEMA AUTO-MIGRATION
+    |--------------------------------------------------------------------------
+    |
+    | Older Railway/XAMPP databases may not have the email-OTP adviser migration
+    | applied yet. Add the columns the application queries, keeping startup
+    | backward-compatible until the SQL migration is run manually.
+    */
+
+    try {
+        $userEmailVerifiedColumn = $pdo->query("SHOW COLUMNS FROM `users` LIKE 'email_verified_at'")
+            ->fetch(PDO::FETCH_ASSOC);
+
+        if (!$userEmailVerifiedColumn) {
+            $pdo->exec(
+                "ALTER TABLE `users`
+                 ADD COLUMN `email_verified_at` DATETIME DEFAULT NULL AFTER `email`"
+            );
+            $pdo->exec(
+                "UPDATE `users`
+                 SET `email_verified_at` = UTC_TIMESTAMP()
+                 WHERE `role` = 'student'"
+            );
+        }
+
+        $pdo->exec(
+            "ALTER TABLE `users`
+             MODIFY COLUMN `role`
+             ENUM('dean','evaluator','student','adviser') NOT NULL"
+        );
+
+        $otpTable = $pdo->query("SHOW TABLES LIKE 'auth_otp_challenges'")
+            ->fetchColumn();
+
+        if ($otpTable !== false) {
+            $otpPurposeColumn = $pdo->query("SHOW COLUMNS FROM `auth_otp_challenges` LIKE 'purpose'")
+                ->fetch(PDO::FETCH_ASSOC);
+
+            if (!$otpPurposeColumn) {
+                $pdo->exec(
+                    "ALTER TABLE `auth_otp_challenges`
+                     ADD COLUMN `purpose` VARCHAR(32) NOT NULL DEFAULT 'login' AFTER `user_id`"
+                );
+            }
+        }
+
+        $projectsTable = $pdo->query("SHOW TABLES LIKE 'projects'")
+            ->fetchColumn();
+
+        if ($projectsTable !== false) {
+            $adviserUserColumn = $pdo->query("SHOW COLUMNS FROM `projects` LIKE 'adviser_user_id'")
+                ->fetch(PDO::FETCH_ASSOC);
+
+            if (!$adviserUserColumn) {
+                $pdo->exec(
+                    "ALTER TABLE `projects`
+                     ADD COLUMN `adviser_user_id` INT(11) DEFAULT NULL AFTER `adviser`"
+                );
+            }
+        }
+    } catch (PDOException $schemaError) {
+        error_log('[SCHEMA MIGRATION ERROR] ' . $schemaError->getMessage());
+    }
+
 } catch (PDOException $e) {
 
     error_log('[DATABASE ERROR] ' . $e->getMessage());
