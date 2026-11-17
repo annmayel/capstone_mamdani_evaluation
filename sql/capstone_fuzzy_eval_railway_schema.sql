@@ -246,6 +246,7 @@ CREATE TABLE `projects` (
   `description` text DEFAULT NULL,
   `google_drive_url` varchar(1000) DEFAULT NULL,
   `github_url` varchar(1000) DEFAULT NULL,
+  `other_project_url` varchar(1000) DEFAULT NULL,
   `status` varchar(60) DEFAULT 'Submitted',
   `project_score` decimal(6,2) DEFAULT 0.00,
   `paper_score` decimal(6,2) DEFAULT 0.00,

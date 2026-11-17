@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/email_notifications.php';
+require_once __DIR__ . '/../php/project_links.php';
 session_start();
 
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'student') {
@@ -29,6 +30,7 @@ $file = $_FILES['proposal'] ?? null;
 $projectTitle = trim((string) ($_POST['project_title'] ?? ''));
 $googleDriveUrl = trim((string) ($_POST['google_drive_url'] ?? ''));
 $githubUrl = trim((string) ($_POST['github_url'] ?? ''));
+$otherProjectUrl = trim((string) ($_POST['other_project_url'] ?? ''));
 $legacySubmissionUrl = trim((string) ($_POST['submission_url'] ?? ''));
 $hasUpload = $file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
 $destination = null;
@@ -36,7 +38,7 @@ $existingTitleStmt = $pdo->prepare('SELECT title FROM projects WHERE id = ? AND 
 $existingTitleStmt->execute([(int) $projectId, $studentId]);
 $existingProjectTitle = trim((string) $existingTitleStmt->fetchColumn());
 
-$resourceLinks = array_filter([$googleDriveUrl, $githubUrl, $legacySubmissionUrl]);
+$resourceLinks = array_filter([$googleDriveUrl, $githubUrl, $otherProjectUrl, $legacySubmissionUrl]);
 if (!$hasUpload && !$resourceLinks) {
     header('Location: ' . $redirect . '&error=missing_submission');
     exit;
@@ -50,22 +52,19 @@ if ($projectTitle === '') {
     exit;
 }
 
-$validateLink = static function (string $url, array $allowedHosts): bool {
-    $parsed = filter_var($url, FILTER_VALIDATE_URL);
-    $host = strtolower((string) parse_url($url, PHP_URL_HOST));
-    $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-    return (bool) $parsed && in_array($scheme, ['http', 'https'], true) && in_array($host, $allowedHosts, true);
-};
-
-if ($googleDriveUrl && !$validateLink($googleDriveUrl, ['drive.google.com', 'docs.google.com'])) {
+if ($googleDriveUrl && !fuzzy_project_link_is_valid($googleDriveUrl, ['drive.google.com', 'docs.google.com'])) {
     header('Location: ' . $redirect . '&error=invalid_drive_link');
     exit;
 }
-if ($githubUrl && !$validateLink($githubUrl, ['github.com', 'gist.github.com', 'raw.githubusercontent.com'])) {
+if ($githubUrl && !fuzzy_project_link_is_valid($githubUrl, ['github.com', 'gist.github.com', 'raw.githubusercontent.com'])) {
     header('Location: ' . $redirect . '&error=invalid_github_link');
     exit;
 }
-if ($legacySubmissionUrl && !$validateLink($legacySubmissionUrl, ['drive.google.com', 'docs.google.com', 'github.com', 'gist.github.com', 'raw.githubusercontent.com'])) {
+if ($otherProjectUrl && !fuzzy_project_link_is_valid($otherProjectUrl)) {
+    header('Location: ' . $redirect . '&error=invalid_other_link');
+    exit;
+}
+if ($legacySubmissionUrl && !fuzzy_project_link_is_valid($legacySubmissionUrl, ['drive.google.com', 'docs.google.com', 'github.com', 'gist.github.com', 'raw.githubusercontent.com'])) {
     header('Location: ' . $redirect . '&error=invalid_link');
     exit;
 }
@@ -115,12 +114,11 @@ try {
     if (!$columnCheck) {
         $pdo->exec('ALTER TABLE student_submissions ADD COLUMN submission_url VARCHAR(1000) DEFAULT NULL AFTER stored_filename');
     }
-    $projectColumns = $pdo->query("SHOW COLUMNS FROM projects WHERE Field IN ('google_drive_url', 'github_url')")->fetchAll(PDO::FETCH_COLUMN);
-    if (count($projectColumns) < 2) {
-        if (!in_array('google_drive_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN google_drive_url VARCHAR(1000) DEFAULT NULL AFTER description');
-        if (!in_array('github_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN github_url VARCHAR(1000) DEFAULT NULL AFTER google_drive_url');
-    }
-    $pdo->prepare('UPDATE projects SET title = ?, google_drive_url = ?, github_url = ? WHERE id = ? AND student_id = ?')->execute([$projectTitle, $googleDriveUrl ?: null, $githubUrl ?: null, (int) $projectId, $studentId]);
+    $projectColumns = $pdo->query("SHOW COLUMNS FROM projects WHERE Field IN ('google_drive_url', 'github_url', 'other_project_url')")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('google_drive_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN google_drive_url VARCHAR(1000) DEFAULT NULL AFTER description');
+    if (!in_array('github_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN github_url VARCHAR(1000) DEFAULT NULL AFTER google_drive_url');
+    if (!in_array('other_project_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN other_project_url VARCHAR(1000) DEFAULT NULL AFTER github_url');
+    $pdo->prepare('UPDATE projects SET title = ?, google_drive_url = ?, github_url = ?, other_project_url = ? WHERE id = ? AND student_id = ?')->execute([$projectTitle, $googleDriveUrl ?: null, $githubUrl ?: null, $otherProjectUrl ?: null, (int) $projectId, $studentId]);
     $stmt = $pdo->prepare('INSERT INTO student_submissions (student_id, project_id, original_filename, stored_filename, submission_url, mime_type, file_size, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([$studentId, (int) $projectId, $originalName, $storedName, $hasUpload ? null : ($legacySubmissionUrl ?: null), $mime, $hasUpload ? (int) $file['size'] : $fileSize, 'submitted']);
     $submissionId = (int) $pdo->lastInsertId();
@@ -167,6 +165,7 @@ try {
         ]);
     }
 } catch (Throwable $exception) {
+    error_log('[proposal submission] ' . $exception->getMessage());
     if ($destination) @unlink($destination);
     header('Location: ' . $redirect . '&error=save_failed');
     exit;

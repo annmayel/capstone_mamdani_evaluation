@@ -20,7 +20,7 @@ try {
     $tableReady = false;
 }
 $latestSubmission = $submissions[0] ?? null;
-$uploadMessages = ['uploaded' => 'Project, paper, and resources submitted successfully.', 'invalid_pdf' => 'Only valid PDF files up to 10 MB are accepted.', 'upload_failed' => 'The proposal upload failed. Please try again.', 'storage_failed' => 'The proposal could not be saved. Please contact the administrator.', 'save_failed' => 'The proposal could not be recorded. Please contact the administrator.', 'no_project' => 'A project record is required before submitting a proposal.', 'invalid_request' => 'The submission request could not be verified.', 'missing_submission' => 'Choose a PDF file or provide at least one project resource link.', 'missing_project_title' => 'Enter the project title so the Dean can identify the project.', 'invalid_drive_link' => 'Use a valid Google Drive link.', 'invalid_github_link' => 'Use a valid GitHub link.', 'invalid_link' => 'Use a valid Google Drive or GitHub link.'];
+$uploadMessages = ['uploaded' => 'Project, paper, and resources submitted successfully.', 'invalid_pdf' => 'Only valid PDF files up to 10 MB are accepted.', 'upload_failed' => 'The proposal upload failed. Please try again.', 'storage_failed' => 'The proposal could not be saved. Please contact the administrator.', 'save_failed' => 'The proposal could not be recorded. Please contact the administrator.', 'no_project' => 'A project record is required before submitting a proposal.', 'invalid_request' => 'The submission request could not be verified.', 'missing_submission' => 'Choose a PDF file or provide at least one project resource link.', 'missing_project_title' => 'Enter the project title so the Dean can identify the project.', 'invalid_drive_link' => 'Use a valid Google Drive link.', 'invalid_github_link' => 'Use a valid GitHub link.', 'invalid_other_link' => 'Use a valid HTTP or HTTPS project link.', 'invalid_link' => 'Use a valid Google Drive or GitHub link.'];
 $messageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '');
 $displayName = $user['full_name'] ?? 'Student';
 $initial = strtoupper(substr($displayName, 0, 1));
@@ -134,9 +134,16 @@ $displayStatus = $latestSubmission
                     <input id="github-url" name="github_url" type="url" value="<?=esc($project['github_url'] ?? '')?>" placeholder="https://github.com/..." autocomplete="url">
                   </div>
                 </div>
+                <div class="proposal-resource-row">
+                  <span class="proposal-resource-icon" aria-hidden="true">↗</span>
+                  <div class="submission-resource-field">
+                    <label for="other-project-url">Other project link</label>
+                    <input id="other-project-url" name="other_project_url" type="url" maxlength="1000" value="<?=esc($project['other_project_url'] ?? '')?>" placeholder="https://example.com/..." autocomplete="url">
+                  </div>
+                </div>
               </fieldset>
               <div class="proposal-form-footer">
-                <small>Use the short project title here. PDF is for papers/documents; Google Drive and GitHub are project resources.</small>
+                <small>Use the short project title here. PDF is for papers/documents; add project links as resources.</small>
                 <button class="btn primary" type="submit">Submit Project</button>
               </div>
             </form>
@@ -163,7 +170,8 @@ $displayStatus = $latestSubmission
             <div>
               <?php if (!empty($project['google_drive_url'])): ?><a href="<?=esc($project['google_drive_url'])?>" target="_blank" rel="noopener">Google Drive</a><?php endif; ?>
               <?php if (!empty($project['github_url'])): ?><a href="<?=esc($project['github_url'])?>" target="_blank" rel="noopener">GitHub</a><?php endif; ?>
-              <?php if (empty($project['google_drive_url']) && empty($project['github_url'])): ?><span>No project links submitted yet.</span><?php endif; ?>
+              <?php if (!empty($project['other_project_url'])): ?><a href="<?=esc($project['other_project_url'])?>" target="_blank" rel="noopener noreferrer">Other project link</a><?php endif; ?>
+              <?php if (empty($project['google_drive_url']) && empty($project['github_url']) && empty($project['other_project_url'])): ?><span>No project links submitted yet.</span><?php endif; ?>
             </div>
           </div>
         </section>
