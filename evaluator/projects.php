@@ -15,7 +15,7 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
 function evaluator_content_sidebar(string $active, string $displayName, string $displayEmail): void { ?>
   <aside class="sidebar evaluator-sidebar" id="evaluator-sidebar" aria-label="Evaluator navigation">
     <div class="sidebar-header">
-      <div class="logo-icon" aria-hidden="true"></div>
+      <img class="logo-icon" src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">
       <div class="brand-copy"><span class="brand-line">CAPSTONE</span><span class="brand-line brand-emphasis">EVALUATION SYSTEM</span><small>EVALUATOR PORTAL</small></div>
     </div>
     <ul class="sidebar-nav">

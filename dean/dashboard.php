@@ -108,7 +108,7 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
   <div class="dashboard-layout dean-dashboard-layout">
     <div class="sidebar">
       <div class="sidebar-header">
-        <div class="logo-icon" aria-hidden="true">△</div>
+        <img class="logo-icon" src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">
         <div>Capstone <span>Evaluation System</span></div>
         <button class="dean-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
       </div>

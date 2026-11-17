@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="home-page">
   <header class="home-header">
     <a class="home-brand" href="#home" aria-label="Capstone Evaluation System home">
-      <span class="brand-mark">△</span>
+      <img class="brand-mark" src="images_bgnd/CSUCC%20LOGO.png" alt="">
       <span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
     </a>
     <button class="home-menu" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button>
@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <section class="contact-band" id="contact"><div><p class="section-label light-label">05 / CONTACT</p><h2>Questions about<br><em>the evaluation?</em></h2></div><div><p>Fuzzy Score Capstone Evaluation System</p><p>Caraga State University - Cabadbaran Campus</p><p class="contact-muted">Official contact information will be provided by the project administrators.</p></div></section>
   </main>
 
-  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><span class="brand-mark">F</span><span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>In compliance with the principles of the Data Privacy Act of 2012 (Republic Act No. 10173).</span></div><div class="footer-links"><a href="privacy_notice.php">Privacy Notice</a><a href="terms_of_use.php">Terms of Use</a><a href="data_protection.php">Data Protection</a><a href="security_guidelines.php">Security Guidelines</a><a href="#contact">Contact / Report a Security Concern</a></div></footer>
+  <footer class="home-footer"><div class="footer-main"><div class="footer-brand"><a class="home-brand" href="#home"><img class="brand-mark" src="images_bgnd/CSUCC%20LOGO.png" alt=""><span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span></a><p>Mamdani Fuzzy Logic-based capstone project evaluation for clearer academic decisions.</p></div><div><h3>Explore</h3><a href="#home">Home</a><a href="#about">About</a><a href="#system">How it works</a><a href="#actors">Actors</a></div><div><h3>Institution</h3><p>Caraga State University<br>Cabadbaran Campus<br>BS Information Technology</p></div><div><h3>Access</h3><a href="#login">Sign in</a><a href="register.php">Create account</a></div></div><div class="footer-bottom"><span>In compliance with the principles of the Data Privacy Act of 2012 (Republic Act No. 10173).</span></div><div class="footer-links"><a href="privacy_notice.php">Privacy Notice</a><a href="terms_of_use.php">Terms of Use</a><a href="data_protection.php">Data Protection</a><a href="security_guidelines.php">Security Guidelines</a><a href="#contact">Contact / Report a Security Concern</a></div></footer>
   <script>
     const menuButton = document.querySelector('.home-menu');
     const navigation = document.querySelector('.home-nav');

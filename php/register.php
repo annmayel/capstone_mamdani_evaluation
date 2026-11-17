@@ -160,7 +160,7 @@ $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 <body class="register-page">
 	<header class="register-header">
 		<a class="register-brand" href="index.php" aria-label="Back to home">
-			<span class="register-brand-mark">F</span>
+			<img class="register-brand-mark" src="<?= $assetPrefix ?>images_bgnd/CSUCC%20LOGO.png" alt="">
 			<span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
 		</a>
 		<nav class="register-nav" aria-label="Register navigation">

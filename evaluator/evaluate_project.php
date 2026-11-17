@@ -186,7 +186,7 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
   <div class="dashboard-layout evaluator-layout">
     <aside class="sidebar evaluator-sidebar">
       <div class="sidebar-header">
-        <div class="logo-icon" aria-hidden="true"></div>
+        <img class="logo-icon" src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">
         <div class="brand-copy">
           <span class="brand-line">CAPSTONE</span>
           <span class="brand-line brand-emphasis">EVALUATION SYSTEM</span>

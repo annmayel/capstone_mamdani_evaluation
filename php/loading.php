@@ -112,10 +112,20 @@
     }
 
     .logo-text {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       color: var(--white);
-      font-size: 32px;
+      font-size: clamp(20px, 7vw, 32px);
+      max-width: calc(100vw - 32px);
       font-weight: 700;
       margin-bottom: 20px;
+    }
+
+    .logo-text img {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
     }
 
     .logo-text span {
@@ -125,7 +135,7 @@
 <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
 </head>
 <body class="loading-page">
-  <div class="logo-text">△ CAPSTONE <span>FUZZY</span></div>
+  <div class="logo-text"><img src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">CAPSTONE <span>FUZZY</span></div>
   
   <div class="loader-container">
     <div class="loader-cube">

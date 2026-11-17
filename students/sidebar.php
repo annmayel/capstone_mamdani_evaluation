@@ -22,7 +22,7 @@ $sidebarSections = [
 <aside class="student-sidebar" id="student-sidebar">
   <div class="student-brand-row">
     <a class="student-brand" href="student_dashboard.php?view=overview" aria-label="Capstone Evaluation System student dashboard">
-      <span class="student-brand-mark" aria-hidden="true">CE</span>
+      <img class="student-brand-mark" src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">
       <span class="student-brand-copy"><strong>CAPSTONE EVALUATION SYSTEM</strong><small>STUDENT PORTAL</small></span>
     </a>
     <button class="student-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-controls="student-nav" aria-expanded="true" title="Collapse sidebar">
