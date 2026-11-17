@@ -1,152 +1,262 @@
 <?php
 
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/otp_auth.php';
 
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+	session_set_cookie_params([
+		'httponly' => true,
+		'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+		'samesite' => 'Lax',
+	]);
+	session_start();
+}
+
+$otpSessionKey = 'student_registration_otp';
+$errors = [];
+$fieldErrors = [];
+$otpMessage = '';
+$otpMessageType = 'error';
+$showOtpModal = false;
+$otpExpiresIn = 300;
+$otpResendIn = 60;
+$studentIdNumber = strtoupper(trim((string) ($_POST['student_id_number'] ?? '')));
+$groupName = trim((string) ($_POST['group_name'] ?? ''));
+$email = strtolower(trim((string) ($_POST['email'] ?? '')));
+$department = trim((string) ($_POST['department'] ?? 'Information Technology (IT)'));
 
 if (!empty($_SESSION['user'])) {
-	$redirect = $_SESSION['user']['role'] === 'dean'
-		? '../dean/dashboard.php'
-		: ($_SESSION['user']['role'] === 'evaluator' ? '../evaluator/dashboard.php' : '../students/student_dashboard.php');
+	$destinations = [
+		'dean' => '../dean/dashboard.php',
+		'evaluator' => '../evaluator/dashboard.php',
+		'student' => '../students/student_dashboard.php',
+		'adviser' => '../adviser/dashboard.php',
+	];
+	$redirect = $destinations[$_SESSION['user']['role'] ?? ''] ?? '../index.php';
 	header('Location: ' . $redirect);
 	exit;
 }
 
-$errors = [];
-$submittedRole = (string) ($_POST['role'] ?? 'student');
+$loadOtpState = static function () use ($pdo, $otpSessionKey, &$showOtpModal, &$otpExpiresIn, &$otpResendIn): void {
+	$row = fuzzy_otp_pending_row($pdo, false, $otpSessionKey);
+	if (!$row) {
+		return;
+	}
+
+	$showOtpModal = true;
+	$otpExpiresIn = max(0, (int) $row['seconds_until_expiry']);
+	$otpResendIn = max(0, 60 - (int) $row['seconds_since_send']);
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-	$role = in_array($submittedRole, ['dean', 'evaluator', 'student'], true) ? $submittedRole : '';
-	$studentIdNumber = strtoupper(trim((string) ($_POST['student_id_number'] ?? '')));
-	$employeeIdNumber = strtoupper(trim((string) ($_POST['employee_id_number'] ?? '')));
-	$groupName = trim((string) ($_POST['group_name'] ?? ''));
-	$fullName = trim((string) ($_POST['full_name'] ?? ''));
-	$email = trim(strtolower((string) ($_POST['email'] ?? '')));
-	$department = trim($_POST['department'] ?? 'Information Technology (IT)');
-	$password = (string) ($_POST['password'] ?? '');
-	$confirmPassword = (string) ($_POST['confirm_password'] ?? '');
-
+	$action = (string) ($_POST['action'] ?? 'register');
 	if (!csrf_check($_POST['csrf'] ?? '')) {
-		$errors[] = 'Your session expired. Refresh the page and try again.';
-	}
+		if (in_array($action, ['verify_otp', 'resend_otp'], true)) {
+			$otpMessage = 'Your session expired. Refresh the page and try again.';
+			$loadOtpState();
+		} else {
+			$errors[] = 'Your session expired. Refresh the page and try again.';
+		}
+	} elseif ($action === 'verify_otp') {
+		$otpCode = trim((string) ($_POST['otp'] ?? ''));
+		if (!preg_match('/^\d{6}$/D', $otpCode)) {
+			$otpMessage = 'Enter the 6-digit verification code.';
+		} else {
+			$result = fuzzy_otp_verify($pdo, $otpCode, $otpSessionKey, 'student_registration');
+			if ($result['status'] === 'verified') {
+				$verifiedUser = $result['user'];
+				$userId = (int) $verifiedUser['id'];
+				require_once __DIR__ . '/email_notifications.php';
+				notify_user_once(
+					$pdo,
+					$userId,
+					'account-registered:' . $userId,
+					'Email verified',
+					'Your student account is verified and ready to use.',
+					'students/student_dashboard.php'
+				);
+				fuzzy_email_notify($pdo, [
+					'event_key' => 'account_registered:' . $userId,
+					'event_type' => 'account_registered',
+					'recipient_user_id' => $userId,
+					'recipient_email' => (string) $verifiedUser['email'],
+					'recipient_name' => (string) $verifiedUser['full_name'],
+					'subject' => 'Your Capstone Evaluation System account is verified',
+					'heading' => 'Email verified',
+					'intro' => 'Your student account is verified and ready to use.',
+					'sections' => [[
+						'title' => 'Account details',
+						'rows' => [['Role', 'Student'], ['CSUCC ID Number', (string) $verifiedUser['student_id_number']],
+							['Account ID', (string) $verifiedUser['account_id']]],
+					]],
+					'portal_path' => '/students/student_dashboard.php',
+				]);
+				$_SESSION['verification_success'] = 'Your email is verified. Your student account is ready.';
+				header('Location: ../students/student_dashboard.php');
+				exit;
+			}
 
-	if ($role === '') {
-		$errors[] = 'Please select a valid account role.';
-	} elseif ($role === 'student') {
+			$otpMessage = match ($result['status']) {
+				'invalid' => 'That code is incorrect. You have ' . (int) $result['attempts_left'] . ' attempt(s) remaining.',
+				'expired' => 'That code has expired. Request a new code to continue.',
+				'locked' => 'Too many incorrect attempts. Submit your registration details again to request a new code.',
+				'missing' => 'This verification request is no longer active. Submit your registration details again to request a new code.',
+				default => 'We could not verify the code. Please try again.',
+			};
+		}
+		$loadOtpState();
+	} elseif ($action === 'resend_otp') {
+		$result = fuzzy_otp_resend($pdo, $otpSessionKey, 'student_registration');
+		$otpMessage = match ($result) {
+			'sent' => 'A new verification code has been sent.',
+			'cooldown' => 'Please wait before requesting another code.',
+			'rate_limited' => 'Too many codes have been requested. Try again later.',
+			'delivery_failed' => 'We could not deliver a new code. Check your email address or try again later.',
+			'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
+			'locked' => 'Too many incorrect attempts. Submit your registration details again to request a new code.',
+			'missing' => 'This verification request is no longer active. Submit your registration details again to request a new code.',
+			default => 'We could not resend the code. Please try again.',
+		};
+		$otpMessageType = $result === 'sent' ? 'success' : 'error';
+		$loadOtpState();
+	} elseif ($action === 'cancel_otp') {
+		fuzzy_otp_invalidate_pending($pdo, $otpSessionKey);
+		$errors[] = 'Email verification was cancelled. Your account remains unverified; submit the same details again when you are ready.';
+	} else {
+		$studentIdNumber = strtoupper(trim((string) ($_POST['student_id_number'] ?? '')));
+		$groupName = trim((string) ($_POST['group_name'] ?? ''));
+		$email = strtolower(trim((string) ($_POST['email'] ?? '')));
+		$department = trim((string) ($_POST['department'] ?? ''));
+		$password = (string) ($_POST['password'] ?? '');
+		$confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
 		if (!preg_match('/^[A-Z0-9][A-Z0-9-]{2,49}$/', $studentIdNumber)) {
-			$errors[] = 'Enter a valid Student ID Number using at least 3 letters, numbers, or hyphens.';
+			$fieldErrors['student_id_number'] = 'Enter a valid Student ID Number using at least 3 letters, numbers, or hyphens.';
 		}
 		if ($groupName === '' || strlen($groupName) > 200) {
-			$errors[] = 'Enter a Group Name (up to 200 characters).';
+			$fieldErrors['group_name'] = 'Enter a Group Name (up to 200 characters).';
 		}
-		$fullName = 'Student ' . $studentIdNumber;
-	} elseif (!preg_match('/^[A-Z0-9][A-Z0-9-]{2,49}$/', $employeeIdNumber)) {
-		$errors[] = 'Enter a valid Employee ID Number using at least 3 letters, numbers, or hyphens.';
-	} else {
-		$fullName = 'Employee ' . $employeeIdNumber;
-	}
-
-	if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-		$errors[] = 'Please provide a valid email address.';
-	} elseif (!is_csucc_email($email)) {
-		$errors[] = 'Only @csucc.edu.ph email addresses can register.';
-	}
-
-	if (strlen($password) < 8) {
-		$errors[] = 'Password must be at least 8 characters long.';
-	}
-
-	if ($password !== $confirmPassword) {
-		$errors[] = 'Passwords do not match.';
-	}
-
-	if (empty($errors)) {
-		$existing = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
-		$existing->execute([$email]);
-
-		if ($existing->fetch()) {
-			$errors[] = 'An account with this email already exists.';
+		if ($email === '' || strlen($email) > 150 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			$fieldErrors['email'] = 'Enter a valid email address.';
+		} elseif (!is_csucc_email($email)) {
+			$fieldErrors['email'] = 'Only @csucc.edu.ph email addresses can register.';
 		}
-	}
-
-	if (empty($errors) && $role === 'student') {
-		$existingStudentId = $pdo->prepare('SELECT id FROM users WHERE student_id_number = ? LIMIT 1');
-		$existingStudentId->execute([$studentIdNumber]);
-		if ($existingStudentId->fetch()) {
-			$errors[] = 'An account with this Student ID Number already exists.';
+		if (strlen($department) > 100) {
+			$fieldErrors['department'] = 'Department / Program must be 100 characters or fewer.';
 		}
-	}
-
-	if (empty($errors) && in_array($role, ['dean', 'evaluator'], true)) {
-		$existingEmployeeId = $pdo->prepare('SELECT id FROM users WHERE employee_id_number = ? LIMIT 1');
-		$existingEmployeeId->execute([$employeeIdNumber]);
-		if ($existingEmployeeId->fetch()) {
-			$errors[] = 'An account with this Employee ID Number already exists.';
+		$passwordLength = function_exists('mb_strlen') ? mb_strlen($password, 'UTF-8') : strlen($password);
+		if ($passwordLength < 8) {
+			$fieldErrors['password'] = 'Password must be at least 8 characters long.';
 		}
-	}
+		if ($confirmPassword === '') {
+			$fieldErrors['confirm_password'] = 'Please confirm your password.';
+		} elseif ($password !== $confirmPassword) {
+			$fieldErrors['confirm_password'] = 'Passwords do not match.';
+		}
 
-	if (empty($errors)) {
-		$accountId = generate_account_id($pdo, $role);
-		$hash = password_hash($password, PASSWORD_DEFAULT);
+		if (!$fieldErrors) {
+			$emailQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, email_verified_at FROM users WHERE email = ? LIMIT 1');
+			$emailQuery->execute([$email]);
+			$existingEmail = $emailQuery->fetch(PDO::FETCH_ASSOC) ?: null;
 
-		try {
-			$stmt = $pdo->prepare('INSERT INTO users (full_name, email, password_hash, role, account_id, department, can_evaluate, student_id_number, group_name, employee_id_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-			$stmt->execute([
-				$fullName,
-				$email,
-				$hash,
-				$role,
-				$accountId,
-				$department,
-				$role === 'dean' || $role === 'evaluator' ? 1 : 0,
-				$role === 'student' ? $studentIdNumber : null,
-				$role === 'student' ? $groupName : null,
-				in_array($role, ['dean', 'evaluator'], true) ? $employeeIdNumber : null,
-			]);
-		} catch (PDOException $exception) {
-			if ((int) ($exception->errorInfo[1] ?? 0) === 1062) {
-				$duplicateMessage = (string) $exception->getMessage();
-				$errors[] = (str_contains($duplicateMessage, 'employee_id_number') || str_contains($duplicateMessage, 'unique_employee_id_number'))
-					? 'An account with this Employee ID Number already exists.'
-					: ((str_contains($duplicateMessage, 'student_id_number') || str_contains($duplicateMessage, 'unique_student_id_number'))
-						? 'An account with this Student ID Number already exists.'
-						: 'An account with this email already exists.');
-			} else {
-				throw $exception;
+			$idQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, email_verified_at FROM users WHERE student_id_number = ? LIMIT 1');
+			$idQuery->execute([$studentIdNumber]);
+			$existingStudentId = $idQuery->fetch(PDO::FETCH_ASSOC) ?: null;
+
+			$pendingAccount = null;
+			if ($existingEmail || $existingStudentId) {
+				$bothMatch = $existingEmail
+					&& $existingStudentId
+					&& (int) $existingEmail['id'] === (int) $existingStudentId['id']
+					&& $existingEmail['role'] === 'student'
+					&& $existingEmail['email_verified_at'] === null
+					&& hash_equals(strtolower((string) $existingEmail['email']), $email)
+					&& hash_equals((string) $existingEmail['student_id_number'], $studentIdNumber)
+					&& password_verify($password, (string) $existingEmail['password_hash']);
+
+				if ($bothMatch) {
+					$pendingAccount = $existingEmail;
+					$pdo->prepare('UPDATE users SET group_name = ?, department = ? WHERE id = ? AND role = \'student\' AND email_verified_at IS NULL')
+						->execute([$groupName, $department ?: null, (int) $pendingAccount['id']]);
+				} else {
+					if ($existingEmail) {
+						$fieldErrors['email'] = 'An account with this email already exists. If you have an unverified registration, use the same Student ID and password to request a new code.';
+					}
+					if ($existingStudentId) {
+						$fieldErrors['student_id_number'] = 'An account with this Student ID Number already exists.';
+					}
+				}
+			}
+
+			if (!$fieldErrors) {
+				try {
+					if ($pendingAccount) {
+						$userId = (int) $pendingAccount['id'];
+					} else {
+						$accountId = generate_account_id($pdo, 'student');
+						$hash = password_hash($password, PASSWORD_DEFAULT);
+						$insert = $pdo->prepare('INSERT INTO users (full_name, email, password_hash, role, account_id, department, can_evaluate, student_id_number, group_name) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)');
+						$insert->execute([
+							'Student ' . $studentIdNumber,
+							$email,
+							$hash,
+							'student',
+							$accountId,
+							$department ?: null,
+							$studentIdNumber,
+							$groupName,
+						]);
+						$userId = (int) $pdo->lastInsertId();
+					}
+
+					$otpResult = fuzzy_otp_begin($pdo, $userId, $email, 'student_registration', $otpSessionKey);
+					if ($otpResult === 'sent') {
+						$otpMessage = "We've sent a 6-digit verification code to your registered email address.";
+						$otpMessageType = 'success';
+						$loadOtpState();
+					} elseif (isset($_SESSION[$otpSessionKey])) {
+						$otpMessage = match ($otpResult) {
+							'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
+							'rate_limited' => 'Too many verification codes have been requested. Try again later.',
+							'cooldown' => 'Please wait before requesting another verification code.',
+							default => 'We could not start a new verification request. You can still use the current code if it has not expired.',
+						};
+						$loadOtpState();
+					} else {
+						$errors[] = match ($otpResult) {
+							'not_configured' => 'Email verification is not configured. Please contact the system administrator before registering.',
+							'delivery_failed' => 'Your registration is saved but unverified. We could not deliver the code; submit the same details again to retry.',
+							'rate_limited' => 'Too many verification codes have been requested. Try again later.',
+							'cooldown' => 'Please wait before requesting another verification code.',
+							'invalid_email' => 'The registered email address could not be verified. Check it and contact the system administrator if the problem continues.',
+							'not_pending' => 'This account is already verified. Please sign in instead.',
+							default => 'We could not start email verification. Please try again.',
+						};
+					}
+				} catch (PDOException $exception) {
+					if ((int) ($exception->errorInfo[1] ?? 0) === 1062) {
+						$message = strtolower((string) $exception->getMessage());
+						$fieldErrors[str_contains($message, 'student_id_number') ? 'student_id_number' : 'email'] =
+							str_contains($message, 'student_id_number')
+								? 'An account with this Student ID Number already exists.'
+								: 'An account with this email already exists.';
+					} else {
+						error_log('[registration] Could not create pending student account: ' . $exception->getMessage());
+						$errors[] = 'We could not save your registration. Please try again later.';
+					}
+				}
 			}
 		}
 	}
-
-	if (empty($errors)) {
-		require_once __DIR__ . '/email_notifications.php';
-		$userId = (int) $pdo->lastInsertId();
-		$registeredLoginId = $role === 'student' ? $studentIdNumber : $employeeIdNumber;
-		notify_user_once($pdo, $userId, 'account-registered:' . $userId, 'Account registration received', 'Your Capstone Evaluation System account has been created. Sign in with your registered ID Number and password.', 'index.php');
-		fuzzy_email_notify($pdo, [
-			'event_key' => 'account_registered:' . $userId,
-			'event_type' => 'account_registered',
-			'recipient_user_id' => $userId,
-			'recipient_email' => $email,
-			'recipient_name' => $fullName,
-			'subject' => 'Your Capstone Evaluation System account is registered',
-			'heading' => 'Account registration received',
-			'intro' => 'Your Capstone Evaluation System account has been created. Sign in with your registered ID Number and password.',
-			'sections' => [[
-				'title' => 'Account details',
-				'rows' => [['Role', ucfirst($role)], ['Account ID', $accountId]],
-			]],
-			'portal_path' => '/index.php',
-		]);
-
-		$_SESSION['registration_success'] = ['login_id' => $registeredLoginId];
-		$requestPath = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-		$loginPage = str_contains($requestPath, '/php/') ? '../index.php' : 'index.php';
-		header('Location: ' . $loginPage . '?registered=1');
-		exit;
-	}
 }
+
+if (!$showOtpModal && isset($_SESSION[$otpSessionKey])) {
+	$loadOtpState();
+}
+
 $requestPath = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
 $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
+$firstInvalidField = (string) array_key_first($fieldErrors);
 ?>
 <!doctype html>
 <html lang="en">
@@ -154,20 +264,20 @@ $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Create Account | Fuzzy Score</title>
-	<link rel="stylesheet" href="<?= $assetPrefix ?>assets/style.css?v=20261021-register-style">
+	<link rel="stylesheet" href="<?= $assetPrefix ?>assets/style.css?v=20261114-otp">
 	<link rel="icon" type="image/png" href="<?= $assetPrefix ?>images_bgnd/favicon.png">
 </head>
 <body class="register-page">
 	<header class="register-header">
-		<a class="register-brand" href="index.php" aria-label="Back to home">
+		<a class="register-brand" href="<?= $assetPrefix ?>index.php" aria-label="Back to home">
 			<img class="register-brand-mark" src="<?= $assetPrefix ?>images_bgnd/CSUCC%20LOGO.png" alt="">
 			<span><strong>CAPSTONE EVALUATION SYSTEM</strong><small>BSIT CAPSTONE PORTAL</small></span>
 		</a>
 		<nav class="register-nav" aria-label="Register navigation">
-			<a href="index.php#about">About</a>
-			<a href="index.php#system">System</a>
-			<a href="index.php#contact">Contact</a>
-			<a class="register-login-link" href="index.php#login">Log in <span aria-hidden="true">→</span></a>
+			<a href="<?= $assetPrefix ?>index.php#about">About</a>
+			<a href="<?= $assetPrefix ?>index.php#system">System</a>
+			<a href="<?= $assetPrefix ?>index.php#contact">Contact</a>
+			<a class="register-login-link" href="<?= $assetPrefix ?>index.php#login">Log in <span aria-hidden="true">→</span></a>
 		</nav>
 	</header>
 
@@ -176,263 +286,200 @@ $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 			<div class="register-heading">
 				<div class="register-heading-icon" aria-hidden="true">+</div>
 				<div>
-					<p class="register-overline">ACCOUNT REGISTRATION</p>
+					<p class="register-overline">STUDENT ACCOUNT REGISTRATION</p>
 					<h1 id="register-title">Create your account</h1>
-					<p>Join the capstone evaluation system and begin using your assigned role.</p>
+					<p>Verify your CSUCC email to activate your student account.</p>
 				</div>
 			</div>
 
-			<?php if (!empty($errors)): ?>
+			<?php if ($errors): ?>
 				<div class="register-alert" role="alert">
-					<?php foreach ($errors as $error): ?>
-						<div><?= esc($error) ?></div>
-					<?php endforeach; ?>
+					<?php foreach ($errors as $error): ?><div><?= esc($error) ?></div><?php endforeach; ?>
 				</div>
 			<?php endif; ?>
+			<?php if ($otpMessage !== '' && !$showOtpModal): ?><div class="register-alert" role="alert"><?= esc($otpMessage) ?></div><?php endif; ?>
 
 			<form class="register-form" method="post" novalidate>
 				<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
+				<input type="hidden" name="action" value="register">
 				<div class="register-column">
-					<label for="student_id_number" <?= $submittedRole === 'student' ? '' : 'hidden' ?>>Student ID Number <small>Required</small></label>
-					<input id="student_id_number" name="student_id_number" type="text" value="<?= esc($_POST['student_id_number'] ?? '') ?>" placeholder="Enter your student ID number" maxlength="50" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,49}" aria-describedby="student-id-feedback" aria-invalid="false" <?= $submittedRole === 'student' ? 'required' : 'disabled hidden' ?>>
-					<p class="register-field-feedback" id="student-id-feedback" aria-live="polite" <?= $submittedRole === 'student' ? '' : 'hidden' ?>>Use at least 3 letters, numbers, or hyphens.</p>
+					<label for="student_id_number">Student ID Number <small>Required</small></label>
+					<input id="student_id_number" name="student_id_number" type="text" value="<?= esc($studentIdNumber) ?>" placeholder="Enter your student ID number" maxlength="50" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,49}" aria-describedby="student-id-feedback" aria-invalid="<?= isset($fieldErrors['student_id_number']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['student_id_number']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
+					<p class="register-field-feedback <?= isset($fieldErrors['student_id_number']) ? 'is-invalid' : '' ?>" id="student-id-feedback" aria-live="polite"><?= esc($fieldErrors['student_id_number'] ?? 'Use at least 3 letters, numbers, or hyphens.') ?></p>
 
-					<label for="employee_id_number" <?= in_array($submittedRole, ['dean', 'evaluator'], true) ? '' : 'hidden' ?>>Employee ID Number <small>Required</small></label>
-					<input id="employee_id_number" name="employee_id_number" type="text" value="<?= esc($_POST['employee_id_number'] ?? '') ?>" placeholder="Enter your employee ID number" maxlength="50" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,49}" aria-describedby="employee-id-feedback" aria-invalid="false" <?= in_array($submittedRole, ['dean', 'evaluator'], true) ? 'required' : 'disabled hidden' ?>>
-					<p class="register-field-feedback" id="employee-id-feedback" aria-live="polite" <?= in_array($submittedRole, ['dean', 'evaluator'], true) ? '' : 'hidden' ?>>Use at least 3 letters, numbers, or hyphens.</p>
-
-					<label for="group_name" <?= $submittedRole === 'student' ? '' : 'hidden' ?>>Group Name <small>Required</small></label>
-					<input id="group_name" name="group_name" type="text" value="<?= esc($_POST['group_name'] ?? '') ?>" placeholder="Enter your group name" maxlength="200" autocomplete="off" aria-describedby="group-name-feedback" aria-invalid="false" <?= $submittedRole === 'student' ? 'required' : 'disabled hidden' ?>>
-					<p class="register-field-feedback" id="group-name-feedback" aria-live="polite" <?= $submittedRole === 'student' ? '' : 'hidden' ?>>Enter the name your capstone group will use.</p>
+					<label for="group_name">Group Name <small>Required</small></label>
+					<input id="group_name" name="group_name" type="text" value="<?= esc($groupName) ?>" placeholder="Enter your group name" maxlength="200" autocomplete="off" aria-describedby="group-name-feedback" aria-invalid="<?= isset($fieldErrors['group_name']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['group_name']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
+					<p class="register-field-feedback <?= isset($fieldErrors['group_name']) ? 'is-invalid' : '' ?>" id="group-name-feedback" aria-live="polite"><?= esc($fieldErrors['group_name'] ?? 'Enter the name your capstone group will use.') ?></p>
 
 					<label for="email">Email address <small>Required</small></label>
-					<input id="email" name="email" type="email" value="<?= esc($_POST['email'] ?? '') ?>" autocomplete="email" aria-describedby="email-feedback" aria-invalid="false" required>
-					<p class="register-field-feedback" id="email-feedback" aria-live="polite">Use your CSUCC institutional email (name@csucc.edu.ph).</p>
+					<input id="email" name="email" type="email" value="<?= esc($email) ?>" autocomplete="email" aria-describedby="email-feedback" aria-invalid="<?= isset($fieldErrors['email']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['email']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
+					<p class="register-field-feedback <?= isset($fieldErrors['email']) ? 'is-invalid' : '' ?>" id="email-feedback" aria-live="polite"><?= esc($fieldErrors['email'] ?? 'Use your CSUCC institutional email (name@csucc.edu.ph).') ?></p>
 
 					<label for="department">Department / Program</label>
-					<input id="department" name="department" type="text" value="<?= esc($_POST['department'] ?? 'Information Technology (IT)') ?>">
+					<input id="department" name="department" type="text" maxlength="100" value="<?= esc($department) ?>" aria-describedby="department-feedback" aria-invalid="<?= isset($fieldErrors['department']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['department']) ? 'class="is-invalid" data-server-error="1"' : '' ?>>
+					<p class="register-field-feedback <?= isset($fieldErrors['department']) ? 'is-invalid' : '' ?>" id="department-feedback" aria-live="polite"><?= esc($fieldErrors['department'] ?? 'Optional; up to 100 characters.') ?></p>
 				</div>
 
 				<div class="register-column">
-					<label for="role">Role <small>Required</small></label>
-					<select id="role" name="role" required>
-						<option value="student" <?= (($_POST['role'] ?? 'student') === 'student') ? 'selected' : '' ?>>Student</option>
-						<option value="evaluator" <?= (($_POST['role'] ?? 'student') === 'evaluator') ? 'selected' : '' ?>>Evaluator</option>
-						<option value="dean" <?= (($_POST['role'] ?? 'student') === 'dean') ? 'selected' : '' ?>>Dean / IT Chairperson</option>
-					</select>
+					<label for="role-display">Role</label>
+					<input id="role-display" type="text" value="Student" readonly aria-readonly="true">
 
-					<label for="password">Password <small>Min 8 chars</small></label>
+					<label for="password">Password <small>Min 8 characters</small></label>
 					<div class="password-field">
-						<input id="password" name="password" type="password" autocomplete="new-password" required>
+						<input id="password" name="password" type="password" autocomplete="new-password" aria-describedby="password-feedback" aria-invalid="<?= isset($fieldErrors['password']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['password']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
 						<button class="password-toggle" id="password-toggle" type="button" aria-label="Show passwords" aria-controls="password confirm_password" aria-pressed="false">Show</button>
 					</div>
+					<p class="register-field-feedback <?= isset($fieldErrors['password']) ? 'is-invalid' : '' ?>" id="password-feedback" aria-live="polite"><?= esc($fieldErrors['password'] ?? 'Use at least 8 characters.') ?></p>
 
 					<label for="confirm_password">Confirm password <small>Required</small></label>
-					<input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" aria-describedby="confirm-password-feedback" aria-invalid="false" required>
-					<p class="register-field-feedback" id="confirm-password-feedback" aria-live="polite">Enter the same password again to confirm.</p>
+					<input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" aria-describedby="confirm-password-feedback" aria-invalid="<?= isset($fieldErrors['confirm_password']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['confirm_password']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
+					<p class="register-field-feedback <?= isset($fieldErrors['confirm_password']) ? 'is-invalid' : '' ?>" id="confirm-password-feedback" aria-live="polite"><?= esc($fieldErrors['confirm_password'] ?? 'Enter the same password again to confirm.') ?></p>
 				</div>
 
-				<div class="register-actions" style="grid-column:1 / -1;">
+				<div class="register-actions">
 					<button class="create-account-button" type="submit">Create Account</button>
-					<a class="back-login-button" href="index.php#login">Back to login</a>
+					<a class="back-login-button" href="<?= $assetPrefix ?>index.php#login">Back to login</a>
 				</div>
 			</form>
 		</section>
 	</main>
+
+	<dialog class="email-otp-modal" id="email-otp-modal" aria-labelledby="otp-title">
+		<div class="email-otp-content">
+			<p class="register-overline">EMAIL VERIFICATION</p>
+			<h2 id="otp-title">Verify Your Email</h2>
+			<p class="email-otp-intro">We've sent a 6-digit verification code to your registered email address.</p>
+			<p class="email-otp-address">Code sent to <strong><?= esc(fuzzy_otp_mask_email((string) ($_SESSION[$otpSessionKey]['email'] ?? ''))) ?></strong></p>
+			<?php if ($otpMessage !== ''): ?><div class="email-otp-message <?= $otpMessageType === 'success' ? 'is-success' : '' ?>" role="<?= $otpMessageType === 'success' ? 'status' : 'alert' ?>"><?= esc($otpMessage) ?></div><?php endif; ?>
+			<form method="post" class="email-otp-verify-form">
+				<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
+				<input type="hidden" name="action" value="verify_otp">
+				<label for="otp-code">6-digit verification code</label>
+				<input id="otp-code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-label="6-digit verification code" required>
+				<div class="email-otp-timers"><span>Code expires in <strong id="otp-expiry-countdown"></strong></span><span id="otp-resend-countdown"></span></div>
+				<button class="create-account-button" type="submit">Verify &amp; Continue</button>
+			</form>
+			<div class="email-otp-actions">
+				<form method="post" id="otp-resend-form">
+					<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
+					<input type="hidden" name="action" value="resend_otp">
+					<button class="email-otp-link" id="otp-resend-button" type="submit">Resend OTP</button>
+				</form>
+				<form method="post">
+					<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
+					<input type="hidden" name="action" value="cancel_otp">
+					<button class="email-otp-link" type="submit">Cancel verification</button>
+				</form>
+			</div>
+		</div>
+	</dialog>
+
 	<script>
 		(() => {
 			const form = document.querySelector('.register-form');
+			const studentId = document.getElementById('student_id_number');
+			const groupName = document.getElementById('group_name');
 			const email = document.getElementById('email');
-			const emailFeedback = document.getElementById('email-feedback');
+			const department = document.getElementById('department');
 			const password = document.getElementById('password');
 			const confirmPassword = document.getElementById('confirm_password');
-			const confirmFeedback = document.getElementById('confirm-password-feedback');
 			const passwordToggle = document.getElementById('password-toggle');
-			const role = document.getElementById('role');
-			const studentIdNumber = document.getElementById('student_id_number');
-			const studentIdFeedback = document.getElementById('student-id-feedback');
-			const employeeIdNumber = document.getElementById('employee_id_number');
-			const employeeIdFeedback = document.getElementById('employee-id-feedback');
-			const groupName = document.getElementById('group_name');
-			const groupNameFeedback = document.getElementById('group-name-feedback');
-			let identityFieldsSubmitted = false;
+			const otpDialog = document.getElementById('email-otp-modal');
+			const otpInput = document.getElementById('otp-code');
+			const firstInvalidField = <?= json_encode($firstInvalidField) ?>;
+			let submitted = <?= $fieldErrors ? 'true' : 'false' ?>;
+			let confirmAttempted = submitted;
 
-			function setRoleFieldVisibility(label, input, visible) {
-				label.hidden = !visible;
-				input.hidden = !visible;
-				input.disabled = !visible;
-				input.required = visible;
-			}
-
-			function updateRoleFields() {
-				const isStudent = role.value === 'student';
-				const isStaff = role.value === 'dean' || role.value === 'evaluator';
-				setRoleFieldVisibility(employeeIdNumber.previousElementSibling, employeeIdNumber, isStaff);
-				setRoleFieldVisibility(studentIdNumber.previousElementSibling, studentIdNumber, isStudent);
-				setRoleFieldVisibility(groupName.previousElementSibling, groupName, isStudent);
-				studentIdFeedback.hidden = !isStudent;
-				employeeIdFeedback.hidden = !isStaff;
-				groupNameFeedback.hidden = !isStudent;
-				if (!isStudent) {
-					studentIdNumber.classList.remove('is-valid', 'is-invalid');
-					studentIdNumber.setAttribute('aria-invalid', 'false');
-					studentIdFeedback.classList.remove('is-valid', 'is-invalid');
-				}
-				if (!isStaff) {
-					employeeIdNumber.classList.remove('is-valid', 'is-invalid');
-					employeeIdNumber.setAttribute('aria-invalid', 'false');
-					employeeIdFeedback.classList.remove('is-valid', 'is-invalid');
-				} else {
-					updateEmployeeIdFeedback();
-				}
-				if (!isStudent) {
-					groupName.classList.remove('is-valid', 'is-invalid');
-					groupName.setAttribute('aria-invalid', 'false');
-					groupNameFeedback.classList.remove('is-valid', 'is-invalid');
-				} else {
-					updateStudentFieldsFeedback();
-				}
-			}
-
-			function setIdentityFeedback(input, feedback, valid, message, invalidMessage, showInvalid, neutralMessage) {
+			function setFeedback(input, message, valid, neutral = false) {
+				const feedback = document.getElementById(input.getAttribute('aria-describedby'));
+				if (!feedback) return valid;
 				input.classList.remove('is-valid', 'is-invalid');
 				feedback.classList.remove('is-valid', 'is-invalid');
-				if (!showInvalid && input.value.trim() === '') {
+				if (neutral) {
 					input.setAttribute('aria-invalid', 'false');
-					feedback.textContent = neutralMessage;
 					return true;
 				}
 				input.classList.add(valid ? 'is-valid' : 'is-invalid');
 				input.setAttribute('aria-invalid', String(!valid));
 				feedback.classList.add(valid ? 'is-valid' : 'is-invalid');
-				feedback.textContent = valid ? message : invalidMessage;
+				feedback.textContent = message;
 				return valid;
 			}
 
-			function updateStudentFieldsFeedback(showInvalid = identityFieldsSubmitted) {
-				const idValue = studentIdNumber.value.trim().toUpperCase();
-				const groupValue = groupName.value.trim();
-				const idValid = /^[A-Z0-9][A-Z0-9-]{2,49}$/.test(idValue);
-				const groupValid = groupValue !== '' && groupValue.length <= 200;
-				return {
-					idValid: setIdentityFeedback(studentIdNumber, studentIdFeedback, idValid, 'Student ID format looks good.', 'Enter at least 3 letters, numbers, or hyphens.', showInvalid, 'Use at least 3 letters, numbers, or hyphens.'),
-					groupValid: setIdentityFeedback(groupName, groupNameFeedback, groupValid, 'Group name is ready.', 'Enter a group name (up to 200 characters).', showInvalid, 'Enter the name your capstone group will use.'),
-				};
+			function validateStudentId(showError = submitted) {
+				const valid = /^[A-Z0-9][A-Z0-9-]{2,49}$/.test(studentId.value.trim().toUpperCase());
+				if (!showError && !studentId.value.trim()) return setFeedback(studentId, '', false, true);
+				return setFeedback(studentId, valid ? 'Student ID format looks good.' : 'Enter at least 3 letters, numbers, or hyphens.', valid);
 			}
-			function updateEmployeeIdFeedback(showInvalid = identityFieldsSubmitted) {
-				const idValue = employeeIdNumber.value.trim().toUpperCase();
-				const idValid = /^[A-Z0-9][A-Z0-9-]{2,49}$/.test(idValue);
-				return setIdentityFeedback(employeeIdNumber, employeeIdFeedback, idValid, 'Employee ID format looks good.', 'Enter at least 3 letters, numbers, or hyphens.', showInvalid, 'Use at least 3 letters, numbers, or hyphens.');
-			}
-			let emailSubmitted = false;
-			let confirmationAttempted = false;
 
-			function updateEmailFeedback(submitted = emailSubmitted) {
+			function validateGroupName(showError = submitted) {
+				const value = groupName.value.trim();
+				const valid = value !== '' && value.length <= 200;
+				if (!showError && value === '') return setFeedback(groupName, '', false, true);
+				return setFeedback(groupName, valid ? 'Group name is ready.' : 'Enter a group name (up to 200 characters).', valid);
+			}
+
+			function validateEmail(showError = submitted) {
 				const value = email.value.trim();
-				email.classList.remove('is-valid', 'is-invalid');
-
-				if (value === '') {
-					email.setAttribute('aria-invalid', submitted ? 'true' : 'false');
-					emailFeedback.classList.remove('is-valid', 'is-invalid');
-					emailFeedback.textContent = submitted
-						? 'Please enter your institutional email address.'
-						: 'Use your CSUCC institutional email (name@csucc.edu.ph).';
-					return !submitted;
-				}
-
 				const candidate = document.createElement('input');
 				candidate.type = 'email';
 				candidate.value = value;
-
-				if (!candidate.checkValidity()) {
-					email.classList.add('is-invalid');
-					email.setAttribute('aria-invalid', 'true');
-					emailFeedback.classList.add('is-invalid');
-					emailFeedback.classList.remove('is-valid');
-					emailFeedback.textContent = 'Enter a valid email address.';
-					return false;
-				}
-
-				const domain = value.slice(value.lastIndexOf('@') + 1).toLowerCase();
-				if (domain !== 'csucc.edu.ph') {
-					email.classList.add('is-invalid');
-					email.setAttribute('aria-invalid', 'true');
-					emailFeedback.classList.add('is-invalid');
-					emailFeedback.classList.remove('is-valid');
-					emailFeedback.textContent = 'Only @csucc.edu.ph email addresses can register.';
-					return false;
-				}
-
-				email.classList.add('is-valid');
-				email.setAttribute('aria-invalid', 'false');
-				emailFeedback.classList.add('is-valid');
-				emailFeedback.classList.remove('is-invalid');
-				emailFeedback.textContent = 'This CSUCC email address is eligible to register.';
-				return true;
+				const validFormat = value !== '' && candidate.checkValidity();
+				const institutional = validFormat && value.slice(value.lastIndexOf('@') + 1).toLowerCase() === 'csucc.edu.ph';
+				if (!showError && value === '') return setFeedback(email, '', false, true);
+				const message = !validFormat ? 'Enter a valid email address.' : (!institutional ? 'Only @csucc.edu.ph email addresses can register.' : 'This CSUCC email address is eligible to register.');
+				return setFeedback(email, message, institutional);
 			}
 
-			function updateConfirmationFeedback(attempted = confirmationAttempted) {
-				confirmPassword.classList.remove('is-valid', 'is-invalid');
-
-				if (confirmPassword.value === '' && !attempted) {
-					confirmPassword.setAttribute('aria-invalid', 'false');
-					confirmFeedback.classList.remove('is-valid', 'is-invalid');
-					confirmFeedback.textContent = 'Enter the same password again to confirm.';
-					return true;
-				}
-
-				if (confirmPassword.value === '') {
-					confirmPassword.classList.add('is-invalid');
-					confirmPassword.setAttribute('aria-invalid', 'true');
-					confirmFeedback.classList.add('is-invalid');
-					confirmFeedback.classList.remove('is-valid');
-					confirmFeedback.textContent = 'Please confirm your password.';
-					return false;
-				}
-
-				if (confirmPassword.value !== password.value) {
-					confirmPassword.classList.add('is-invalid');
-					confirmPassword.setAttribute('aria-invalid', 'true');
-					confirmFeedback.classList.add('is-invalid');
-					confirmFeedback.classList.remove('is-valid');
-					confirmFeedback.textContent = 'Passwords do not match.';
-					return false;
-				}
-
-				confirmPassword.classList.add('is-valid');
-				confirmPassword.setAttribute('aria-invalid', 'false');
-				confirmFeedback.classList.add('is-valid');
-				confirmFeedback.classList.remove('is-invalid');
-				confirmFeedback.textContent = 'Passwords match.';
-				return true;
+			function validateDepartment() {
+				const valid = department.value.length <= 100;
+				if (!department.value) return setFeedback(department, 'Optional; up to 100 characters.', true);
+				return setFeedback(department, valid ? 'Department / Program is ready.' : 'Department / Program must be 100 characters or fewer.', valid);
 			}
 
-			email.addEventListener('input', () => updateEmailFeedback());
-			role.addEventListener('change', updateRoleFields);
-			studentIdNumber.addEventListener('input', () => updateStudentFieldsFeedback());
-			employeeIdNumber.addEventListener('input', () => updateEmployeeIdFeedback());
-			groupName.addEventListener('input', () => updateStudentFieldsFeedback());
-			studentIdNumber.addEventListener('blur', () => {
-				studentIdNumber.value = studentIdNumber.value.trim().toUpperCase();
-				updateStudentFieldsFeedback();
+			function validatePassword(showError = submitted) {
+				const length = [...password.value].length;
+				const valid = length >= 8;
+				if (!showError && password.value === '') return setFeedback(password, '', false, true);
+				return setFeedback(password, valid ? 'Password length is valid.' : 'Password must be at least 8 characters long.', valid);
+			}
+
+			function validateConfirmation(showError = confirmAttempted) {
+				if (confirmPassword.value === '' && !showError) return setFeedback(confirmPassword, 'Enter the same password again to confirm.', false, true);
+				const valid = confirmPassword.value !== '' && confirmPassword.value === password.value;
+				const message = confirmPassword.value === '' ? 'Please confirm your password.' : (valid ? 'Passwords match.' : 'Passwords do not match.');
+				return setFeedback(confirmPassword, message, valid);
+			}
+
+			[studentId, groupName, email, department, password, confirmPassword].forEach((input) => {
+				input.addEventListener('input', () => {
+					delete input.dataset.serverError;
+					if (input === studentId) validateStudentId();
+					if (input === groupName) validateGroupName();
+					if (input === email) validateEmail();
+					if (input === department) validateDepartment();
+					if (input === password) {
+						validatePassword();
+						if (confirmAttempted || confirmPassword.value !== '') validateConfirmation(true);
+					}
+					if (input === confirmPassword) validateConfirmation(true);
+				});
 			});
-			employeeIdNumber.addEventListener('blur', () => {
-				employeeIdNumber.value = employeeIdNumber.value.trim().toUpperCase();
-				updateEmployeeIdFeedback();
+
+			studentId.addEventListener('blur', () => {
+				if (studentId.dataset.serverError) return;
+				studentId.value = studentId.value.trim().toUpperCase();
+				validateStudentId();
 			});
 			groupName.addEventListener('blur', () => {
+				if (groupName.dataset.serverError) return;
 				groupName.value = groupName.value.trim();
-				updateStudentFieldsFeedback();
+				validateGroupName();
 			});
 			email.addEventListener('blur', () => {
+				if (email.dataset.serverError) return;
 				email.value = email.value.trim();
-				updateEmailFeedback();
-			});
-			confirmPassword.addEventListener('input', () => updateConfirmationFeedback());
-			password.addEventListener('input', () => {
-				if (confirmationAttempted || confirmPassword.value !== '') {
-					updateConfirmationFeedback(true);
-				}
+				validateEmail();
 			});
 
 			passwordToggle.addEventListener('click', () => {
@@ -445,43 +492,62 @@ $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 			});
 
 			form.addEventListener('submit', (event) => {
-				emailSubmitted = true;
-				confirmationAttempted = true;
-				identityFieldsSubmitted = true;
-				email.value = email.value.trim();
-				studentIdNumber.value = studentIdNumber.value.trim().toUpperCase();
-				employeeIdNumber.value = employeeIdNumber.value.trim().toUpperCase();
+				submitted = true;
+				confirmAttempted = true;
+				studentId.value = studentId.value.trim().toUpperCase();
 				groupName.value = groupName.value.trim();
-
-				const emailIsValid = updateEmailFeedback(true);
-				const confirmationIsValid = updateConfirmationFeedback(true);
-				const isStudent = role.value === 'student';
-				const identityFieldsValid = isStudent ? updateStudentFieldsFeedback(true) : {idValid: true, groupValid: true};
-				const employeeIdIsValid = isStudent ? true : updateEmployeeIdFeedback(true);
-
-				if (!emailIsValid || !confirmationIsValid || !identityFieldsValid.idValid || !identityFieldsValid.groupValid || !employeeIdIsValid) {
+				email.value = email.value.trim();
+				const valid = [
+					validateStudentId(true),
+					validateGroupName(true),
+					validateEmail(true),
+					validateDepartment(),
+					validatePassword(true),
+					validateConfirmation(true),
+				].every(Boolean);
+				if (!valid) {
 					event.preventDefault();
-					if (!emailIsValid) {
-						email.focus();
-					} else if (!isStudent && !employeeIdIsValid) {
-						employeeIdNumber.focus();
-					} else if (!identityFieldsValid.idValid) {
-						studentIdNumber.focus();
-					} else if (!identityFieldsValid.groupValid) {
-						groupName.focus();
-					} else {
-						confirmPassword.focus();
-					}
+					const firstInvalid = form.querySelector('[aria-invalid="true"]');
+					firstInvalid?.focus();
 				}
 			});
 
-			if (email.value.trim() !== '') {
-				updateEmailFeedback();
-			}
-			if (confirmPassword.value !== '') {
-				updateConfirmationFeedback();
-			}
-			updateRoleFields();
+			[studentId, groupName, email, department, password, confirmPassword].forEach((input) => {
+				if (input.dataset.serverError) return;
+				if (input.value !== '') {
+					if (input === studentId) validateStudentId();
+					if (input === groupName) validateGroupName();
+					if (input === email) validateEmail();
+					if (input === department) validateDepartment();
+					if (input === password) validatePassword();
+					if (input === confirmPassword) validateConfirmation();
+				}
+			});
+			if (firstInvalidField) document.getElementById(firstInvalidField)?.focus();
+
+			otpInput?.addEventListener('input', () => {
+				otpInput.value = otpInput.value.replace(/\D/g, '').slice(0, 6);
+			});
+
+			<?php if ($showOtpModal): ?>
+			otpDialog.showModal();
+			otpInput.focus();
+			let expirySeconds = <?= (int) $otpExpiresIn ?>;
+			let resendSeconds = <?= (int) $otpResendIn ?>;
+			const expiryText = document.getElementById('otp-expiry-countdown');
+			const resendText = document.getElementById('otp-resend-countdown');
+			const resendButton = document.getElementById('otp-resend-button');
+			const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+			const updateTimers = () => {
+				expiryText.textContent = formatTime(expirySeconds);
+				resendButton.disabled = resendSeconds > 0;
+				resendText.textContent = resendSeconds > 0 ? `Resend available in ${formatTime(resendSeconds)}` : 'You can request a new code.';
+				if (expirySeconds > 0) expirySeconds -= 1;
+				if (resendSeconds > 0) resendSeconds -= 1;
+			};
+			updateTimers();
+			window.setInterval(updateTimers, 1000);
+			<?php endif; ?>
 		})();
 	</script>
 </body>

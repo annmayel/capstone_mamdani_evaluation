@@ -46,6 +46,7 @@ SET time_zone = "+00:00";
 CREATE TABLE `auth_otp_challenges` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `user_id` int(11) NOT NULL,
+  `purpose` varchar(32) NOT NULL DEFAULT 'login',
   `session_binding_hash` char(64) NOT NULL,
   `code_hash` char(64) NOT NULL,
   `expires_at` datetime NOT NULL,
@@ -240,6 +241,7 @@ CREATE TABLE `projects` (
   `group_name` varchar(200) DEFAULT NULL,
   `members` text DEFAULT NULL,
   `adviser` varchar(200) DEFAULT NULL,
+  `adviser_user_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `academic_year` varchar(30) DEFAULT NULL,
   `defense_date` date DEFAULT NULL,
@@ -290,8 +292,9 @@ CREATE TABLE `users` (
   `group_name` varchar(200) DEFAULT NULL,
   `employee_id_number` varchar(50) DEFAULT NULL,
   `email` varchar(150) NOT NULL,
+  `email_verified_at` datetime DEFAULT NULL,
   `password_hash` varchar(255) NOT NULL,
-  `role` enum('dean','evaluator','student') NOT NULL,
+  `role` enum('dean','evaluator','student','adviser') NOT NULL,
   `account_id` varchar(30) DEFAULT NULL,
   `school_id` varchar(50) DEFAULT NULL,
   `department` varchar(100) DEFAULT NULL,
@@ -389,7 +392,8 @@ ALTER TABLE `notifications`
 -- Indexes for table `projects`
 --
 ALTER TABLE `projects`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_projects_adviser_user` (`adviser_user_id`);
 
 
 

@@ -27,6 +27,14 @@ Do not put real credentials in this project or commit them. On a local XAMPP ins
 
 For Gmail, use `smtp.gmail.com`, port `587`, encryption `tls`, the sender Gmail address, and a Google App Password when the account supports it. Do not use the normal Gmail password.
 
+## Student and Adviser email verification
+
+The login OTP and student-registration OTP use the same SMTP variables above. The Docker build installs PHPMailer from `php/composer.json`; do not commit SMTP credentials.
+
+Before deploying OTP-enabled PHP code to an existing database, select the database configured by Railway's `MYSQLDATABASE` reference and run `sql/migrations/015_email_otp_advisers.sql`. The migration is safe to rerun, creates the OTP challenge table if it is missing, adds the verification and Adviser-assignment columns, and preserves existing records. Existing students are marked verified when the verification column is first added; Advisers must verify on their next successful login. Existing project Adviser names are linked only when they match one unique Adviser account name.
+
+Run this migration before the application deployment so login and registration requests do not query columns that have not been added. Fresh schema imports already include these fields.
+
 ## Sending and retrying
 
 Event handling queues delivery after saving the portal event. Unique email and in-app event keys prevent normal repeated requests from queuing the same event twice, and a stable message ID is used for email retries. SMTP is not an exactly-once transport: a disconnect after the receiving server accepts a message but before it confirms acceptance can still lead to a duplicate if retried. SMTP failures are recorded and do not roll back submissions or evaluations. To retry pending/failed messages, a dean can open the Email Delivery section of the dean dashboard. Search, status filters, and pagination operate on the server; retry is protected by the dean role, CSRF validation, and a confirmation prompt. Manual retry resets an exhausted attempt count; automatic retries use increasing delays (one minute, five minutes, fifteen minutes, then one hour) and stop after five attempts.

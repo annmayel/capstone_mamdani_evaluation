@@ -2,14 +2,9 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/email_notifications.php';
 require_once __DIR__ . '/../php/project_links.php';
-session_start();
-
-if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'student') {
-    header('Location: ../index.php');
-    exit;
-}
-
-$studentId = (int) $_SESSION['user']['id'];
+require_once __DIR__ . '/../php/student_auth.php';
+$user = require_verified_student($pdo);
+$studentId = (int) $user['id'];
 $redirect = 'student_dashboard.php?view=proposal';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_check($_POST['csrf'] ?? '')) {

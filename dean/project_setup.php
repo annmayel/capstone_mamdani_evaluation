@@ -16,19 +16,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $groupName = trim($_POST['group_name'] ?? '');
         $members = trim($_POST['members'] ?? '');
         $adviser = trim($_POST['adviser'] ?? '');
+        $adviserUserIdInput = trim((string) ($_POST['adviser_user_id'] ?? ''));
+        $adviserUserId = 0;
         $academicYear = trim($_POST['academic_year'] ?? '');
         $defenseDate = $_POST['defense_date'] ?? null;
         $description = trim($_POST['description'] ?? '');
 
-        if (!$studentId || $code === '' || $title === '') {
+        if ($adviserUserIdInput !== '' && !ctype_digit($adviserUserIdInput)) {
+            $error = 'Select a valid Adviser account.';
+        } elseif ($adviserUserIdInput !== '') {
+            $adviserUserId = (int) $adviserUserIdInput;
+        }
+
+        if ($error === '' && (!$studentId || $code === '' || $title === '')) {
             $error = 'Select a student and provide the project code and title.';
-        } else {
+        } elseif ($error === '') {
             $stmt = $pdo->prepare('SELECT id, full_name, email FROM users WHERE id = ? AND role = \'student\' LIMIT 1');
             $stmt->execute([$studentId]);
             $student = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$student) {
                 $error = 'The selected student account was not found.';
             } else {
+                if ($adviserUserId > 0) {
+                    $adviserStmt = $pdo->prepare('SELECT full_name FROM users WHERE id = ? AND role = \'adviser\' LIMIT 1');
+                    $adviserStmt->execute([$adviserUserId]);
+                    $assignedAdviserName = $adviserStmt->fetchColumn();
+                    if (!$assignedAdviserName) {
+                        $error = 'The selected Adviser account was not found.';
+                    } else {
+                        $adviser = (string) $assignedAdviserName;
+                    }
+                }
+            }
+            if ($error === '') {
                 if ($editProjectId > 0) {
                     $stmt = $pdo->prepare('SELECT id, defense_date FROM projects WHERE id = ? AND student_id = ? LIMIT 1');
                     $stmt->execute([$editProjectId, $studentId]);
@@ -43,14 +63,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($editProjectId > 0 && !$existingProjectId) {
                     $error = 'The selected project could not be found for that student.';
                 } elseif ($existingProjectId) {
-                    $stmt = $pdo->prepare('UPDATE projects SET code=?, title=?, group_name=?, members=?, adviser=?, academic_year=?, defense_date=?, description=? WHERE id=?');
-                    $stmt->execute([$code, $title, $groupName, $members, $adviser, $academicYear, $defenseDate ?: null, $description, $existingProjectId]);
+                    $stmt = $pdo->prepare('UPDATE projects SET code=?, title=?, group_name=?, members=?, adviser=?, adviser_user_id=?, academic_year=?, defense_date=?, description=? WHERE id=?');
+                    $stmt->execute([$code, $title, $groupName, $members, $adviser, $adviserUserId ?: null, $academicYear, $defenseDate ?: null, $description, $existingProjectId]);
                     $projectId = (int) $existingProjectId;
                     $message = 'Project details updated and linked to ' . $student['full_name'] . '.';
                     $newProject = false;
                 } else {
-                    $stmt = $pdo->prepare('INSERT INTO projects (code,title,group_name,members,adviser,student_id,academic_year,defense_date,description,status) VALUES (?,?,?,?,?,?,?,?,?,?)');
-                    $stmt->execute([$code, $title, $groupName, $members, $adviser, $studentId, $academicYear, $defenseDate ?: null, $description, 'Draft']);
+                    $stmt = $pdo->prepare('INSERT INTO projects (code,title,group_name,members,adviser,adviser_user_id,student_id,academic_year,defense_date,description,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+                    $stmt->execute([$code, $title, $groupName, $members, $adviser, $adviserUserId ?: null, $studentId, $academicYear, $defenseDate ?: null, $description, 'Draft']);
                     $projectId = (int) $pdo->lastInsertId();
                     $message = 'Project registered and linked to ' . $student['full_name'] . '.';
                     $newProject = true;
@@ -101,10 +121,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $students = $pdo->query("SELECT id, full_name, email FROM users WHERE role = 'student' ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
-$projects = $pdo->query("SELECT p.id, p.code, p.title, p.status, p.group_name, p.academic_year, p.student_id, u.full_name AS student_name FROM projects p LEFT JOIN users u ON u.id = p.student_id ORDER BY p.id DESC")->fetchAll(PDO::FETCH_ASSOC);
+$advisers = $pdo->query("SELECT id, full_name, email FROM users WHERE role = 'adviser' ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
+$projects = $pdo->query("SELECT p.id, p.code, p.title, p.status, p.group_name, p.academic_year, p.student_id, p.adviser, p.adviser_user_id, u.full_name AS student_name, a.full_name AS adviser_name FROM projects p LEFT JOIN users u ON u.id = p.student_id LEFT JOIN users a ON a.id = p.adviser_user_id AND a.role = 'adviser' ORDER BY p.id DESC")->fetchAll(PDO::FETCH_ASSOC);
 $projectForEdit = null;
 if ($editProjectId > 0) {
-    $editProjectStmt = $pdo->prepare('SELECT id, student_id, code, title, group_name, members, adviser, academic_year, defense_date, description FROM projects WHERE id = ? LIMIT 1');
+    $editProjectStmt = $pdo->prepare('SELECT id, student_id, code, title, group_name, members, adviser, adviser_user_id, academic_year, defense_date, description FROM projects WHERE id = ? LIMIT 1');
     $editProjectStmt->execute([$editProjectId]);
     $projectForEdit = $editProjectStmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
@@ -115,9 +136,9 @@ sort($projectStatuses);
 ?>
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Project Setup</title><link rel="stylesheet" href="../assets/style.css?v=20261112"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"><script defer src="../assets/dean-table.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Project Setup</title><link rel="stylesheet" href="../assets/style.css?v=20261114-otp"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"><script defer src="../assets/dean-table.js"></script></head>
 <body class="setup-page"><main class="setup-shell"><div class="setup-page-heading"><div><span class="setup-kicker">CAPSTONE WORKFLOW</span><h2>Project Setup</h2><p class="setup-lead">Link a capstone project to a student so they can submit their proposal.</p></div></div>
 <?php if ($message): ?><div class="setup-alert" role="status"><?=esc($message)?></div><?php endif; ?><?php if ($error): ?><div class="setup-alert setup-error" role="alert"><?=esc($error)?></div><?php endif; ?>
-<section class="setup-card" id="project-form"><h3><?= $projectForEdit ? 'Update student project' : 'Register or update student project' ?></h3><form method="post"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="edit_project_id" value="<?=esc($editProjectId)?>"><div class="setup-grid"><label>Student<select name="student_id" required><option value="">Select student</option><?php foreach ($students as $student): ?><option value="<?=esc($student['id'])?>" <?=((string) ($_POST['student_id'] ?? $projectForEdit['student_id'] ?? '') === (string) $student['id']) ? 'selected' : ''?>><?=esc($student['full_name'])?> (<?=esc($student['email'])?>)</option><?php endforeach; ?></select></label><label>Project Code<input name="code" placeholder="e.g. CC-002" value="<?=esc($_POST['code'] ?? $projectForEdit['code'] ?? '')?>" required></label><label class="wide">Project Title<input name="title" placeholder="Capstone project title" value="<?=esc($_POST['title'] ?? $projectForEdit['title'] ?? '')?>" required></label><label>Group Name<input name="group_name" placeholder="Team name" value="<?=esc($_POST['group_name'] ?? $projectForEdit['group_name'] ?? '')?>"></label><label>Members<input name="members" placeholder="Names separated by semicolons" value="<?=esc($_POST['members'] ?? $projectForEdit['members'] ?? '')?>"></label><label>Adviser<input name="adviser" placeholder="Adviser name" value="<?=esc($_POST['adviser'] ?? $projectForEdit['adviser'] ?? '')?>"></label><label>Academic Year<input name="academic_year" placeholder="2025-2026" value="<?=esc($_POST['academic_year'] ?? $projectForEdit['academic_year'] ?? '')?>"></label><label>Defense Date<input type="date" name="defense_date" value="<?=esc($_POST['defense_date'] ?? $projectForEdit['defense_date'] ?? '')?>"></label><label class="wide">Description<textarea name="description" placeholder="Brief project description"><?=esc($_POST['description'] ?? $projectForEdit['description'] ?? '')?></textarea></label></div><button class="btn primary setup-submit" type="submit"><?= $projectForEdit ? 'Save Project Changes' : 'Register Project' ?></button></form></section>
-<section class="setup-card setup-project-list" data-dean-table><div class="setup-table-heading"><div><h3>Registered Projects</h3><p>Search and filter capstone records.</p></div></div><div class="dean-table-toolbar"><label class="dean-search-field">Search<input type="search" data-table-search placeholder="Search title, code, group or student"></label><label>Academic Year<select data-table-filter="academicYear"><option value="">All years</option><?php foreach ($academicYears as $academicYear): ?><option value="<?=esc(strtolower($academicYear))?>"><?=esc($academicYear)?></option><?php endforeach; ?></select></label><label>Status<select data-table-filter="status"><option value="">All statuses</option><?php foreach ($projectStatuses as $projectStatus): ?><option value="<?=esc(strtolower($projectStatus))?>"><?=esc($projectStatus)?></option><?php endforeach; ?></select></label></div><div class="dean-table-scroll"><table class="setup-table dean-data-table"><thead><tr><th>Project</th><th>Group</th><th>Student</th><th>Academic Year</th><th>Status</th><th>Actions</th></tr></thead><tbody><?php foreach ($projects as $project): ?><tr data-table-row data-academic-year="<?=esc(strtolower((string) $project['academic_year']))?>" data-status="<?=esc(strtolower((string) $project['status']))?>" data-search="<?=esc(strtolower(implode(' ', [$project['code'], $project['title'], $project['group_name'], $project['student_name']])))?>"><td><strong><?=esc($project['code'])?></strong><br><?=esc($project['title'])?></td><td><?=esc($project['group_name'] ?: 'Not set')?></td><td><?=esc($project['student_name'] ?? 'Unlinked')?></td><td><?=esc($project['academic_year'] ?: 'Not set')?></td><td><span class="project-status"><?=esc($project['status'])?></span></td><td><a class="dean-action-button" href="project_setup.php?embedded=1&amp;edit=<?=esc($project['id'])?>#project-form">Edit</a></td></tr><?php endforeach; ?></tbody></table></div><div class="dean-table-footer"><span data-table-count></span><label>Rows<select data-page-size><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><nav data-table-pagination aria-label="Project table pages"><button type="button" data-page-prev>Previous</button><span data-page-indicator></span><button type="button" data-page-next>Next</button></nav></div><div class="dean-table-empty" data-table-empty hidden>No projects match the current search and filters.</div></section>
+<section class="setup-card" id="project-form"><h3><?= $projectForEdit ? 'Update student project' : 'Register or update student project' ?></h3><form method="post"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="edit_project_id" value="<?=esc($editProjectId)?>"><div class="setup-grid"><label>Student<select name="student_id" required><option value="">Select student</option><?php foreach ($students as $student): ?><option value="<?=esc($student['id'])?>" <?=((string) ($_POST['student_id'] ?? $projectForEdit['student_id'] ?? '') === (string) $student['id']) ? 'selected' : ''?>><?=esc($student['full_name'])?> (<?=esc($student['email'])?>)</option><?php endforeach; ?></select></label><label>Project Code<input name="code" placeholder="e.g. CC-002" value="<?=esc($_POST['code'] ?? $projectForEdit['code'] ?? '')?>" required></label><label class="wide">Project Title<input name="title" placeholder="Capstone project title" value="<?=esc($_POST['title'] ?? $projectForEdit['title'] ?? '')?>" required></label><label>Group Name<input name="group_name" placeholder="Team name" value="<?=esc($_POST['group_name'] ?? $projectForEdit['group_name'] ?? '')?>"></label><label>Members<input name="members" placeholder="Names separated by semicolons" value="<?=esc($_POST['members'] ?? $projectForEdit['members'] ?? '')?>"></label><label>Adviser account<select name="adviser_user_id"><option value="">Not linked to an Adviser account</option><?php foreach ($advisers as $adviserAccount): ?><option value="<?=esc($adviserAccount['id'])?>" <?=((string) ($_POST['adviser_user_id'] ?? $projectForEdit['adviser_user_id'] ?? '') === (string) $adviserAccount['id']) ? 'selected' : ''?>><?=esc($adviserAccount['full_name'])?> (<?=esc($adviserAccount['email'])?>)</option><?php endforeach; ?></select></label><label>Adviser display name<input name="adviser" placeholder="Adviser name" value="<?=esc($_POST['adviser'] ?? $projectForEdit['adviser'] ?? '')?>"></label><label>Academic Year<input name="academic_year" placeholder="2025-2026" value="<?=esc($_POST['academic_year'] ?? $projectForEdit['academic_year'] ?? '')?>"></label><label>Defense Date<input type="date" name="defense_date" value="<?=esc($_POST['defense_date'] ?? $projectForEdit['defense_date'] ?? '')?>"></label><label class="wide">Description<textarea name="description" placeholder="Brief project description"><?=esc($_POST['description'] ?? $projectForEdit['description'] ?? '')?></textarea></label></div><button class="btn primary setup-submit" type="submit"><?= $projectForEdit ? 'Save Project Changes' : 'Register Project' ?></button></form></section>
+<section class="setup-card setup-project-list" data-dean-table><div class="setup-table-heading"><div><h3>Registered Projects</h3><p>Search and filter capstone records.</p></div></div><div class="dean-table-toolbar"><label class="dean-search-field">Search<input type="search" data-table-search placeholder="Search title, code, group or student"></label><label>Academic Year<select data-table-filter="academicYear"><option value="">All years</option><?php foreach ($academicYears as $academicYear): ?><option value="<?=esc(strtolower($academicYear))?>"><?=esc($academicYear)?></option><?php endforeach; ?></select></label><label>Status<select data-table-filter="status"><option value="">All statuses</option><?php foreach ($projectStatuses as $projectStatus): ?><option value="<?=esc(strtolower($projectStatus))?>"><?=esc($projectStatus)?></option><?php endforeach; ?></select></label></div><div class="dean-table-scroll"><table class="setup-table dean-data-table"><thead><tr><th>Project</th><th>Group</th><th>Student</th><th>Adviser</th><th>Academic Year</th><th>Status</th><th>Actions</th></tr></thead><tbody><?php foreach ($projects as $project): ?><tr data-table-row data-academic-year="<?=esc(strtolower((string) $project['academic_year']))?>" data-status="<?=esc(strtolower((string) $project['status']))?>" data-search="<?=esc(strtolower(implode(' ', [$project['code'], $project['title'], $project['group_name'], $project['student_name'], $project['adviser_name'] ?: $project['adviser']])))?>"><td><strong><?=esc($project['code'])?></strong><br><?=esc($project['title'])?></td><td><?=esc($project['group_name'] ?: 'Not set')?></td><td><?=esc($project['student_name'] ?? 'Unlinked')?></td><td><?=esc($project['adviser_name'] ?: ($project['adviser'] ?: 'Not assigned'))?></td><td><?=esc($project['academic_year'] ?: 'Not set')?></td><td><span class="project-status"><?=esc($project['status'])?></span></td><td><a class="dean-action-button" href="project_setup.php?embedded=1&amp;edit=<?=esc($project['id'])?>#project-form">Edit</a></td></tr><?php endforeach; ?></tbody></table></div><div class="dean-table-footer"><span data-table-count></span><label>Rows<select data-page-size><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><nav data-table-pagination aria-label="Project table pages"><button type="button" data-page-prev>Previous</button><span data-page-indicator></span><button type="button" data-page-next>Next</button></nav></div><div class="dean-table-empty" data-table-empty hidden>No projects match the current search and filters.</div></section>
 </main></body></html>

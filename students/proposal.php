@@ -1,11 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'student') { header('Location: ../index.php'); exit; }
-
-$user = $_SESSION['user'];
+require_once __DIR__ . '/../php/student_auth.php';
+$user = require_verified_student($pdo);
 $uid = (int) $user['id'];
 $stmt = $pdo->prepare('SELECT * FROM projects WHERE student_id = ? LIMIT 1');
 $stmt->execute([$uid]);

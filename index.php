@@ -1,6 +1,7 @@
 <?php
 // Simple login router for prototype
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/php/otp_auth.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_set_cookie_params([
@@ -11,12 +12,17 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
 $error = '';
+$error = isset($_GET['verification_required']) ? 'Your account must be email-verified before dashboard access. Sign in to continue the verification process.' : $error;
 $registrationSuccess = $_SERVER['REQUEST_METHOD'] === 'GET'
   ? ($_SESSION['registration_success'] ?? null)
   : null;
 unset($_SESSION['registration_success']);
 $loginIdentifier = trim((string) ($_POST['csucc_id'] ?? ($_POST['email'] ?? ($registrationSuccess['login_id'] ?? ''))));
-unset($_SESSION['pending_otp']);
+$otpMessage = '';
+$otpMessageType = 'error';
+$showAdviserOtp = false;
+$otpExpiresIn = 300;
+$otpResendIn = 60;
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_SESSION['user']) && strpos($_SERVER['HTTP_REFERER'] ?? '', '/students/') !== false) {
   $_SESSION = [];
@@ -26,26 +32,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_SESSION['user']) && strpos(
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $action = (string) ($_POST['action'] ?? 'login');
   if (!csrf_check($_POST['csrf'] ?? '')) {
-    $error = 'Your session expired. Refresh the page and try again.';
+    if (in_array($action, ['verify_otp', 'resend_otp'], true)) {
+      $otpMessage = 'Your session expired. Refresh the page and try again.';
+    } else {
+      $error = 'Your session expired. Refresh the page and try again.';
+    }
+  } elseif ($action === 'verify_otp') {
+    $code = trim((string) ($_POST['otp'] ?? ''));
+    if (!preg_match('/^\d{6}$/D', $code)) {
+      $otpMessage = 'Enter the 6-digit verification code.';
+    } else {
+      $result = fuzzy_otp_verify($pdo, $code, 'pending_otp', 'adviser_login');
+      if ($result['status'] === 'verified' && ($result['user']['role'] ?? '') === 'adviser') {
+        header('Location: adviser/dashboard.php');
+        exit;
+      }
+      $otpMessage = match ($result['status']) {
+        'invalid' => 'That code is incorrect. You have ' . (int) $result['attempts_left'] . ' attempt(s) remaining.',
+        'expired' => 'That code has expired. Request a new code to continue.',
+        'locked' => 'Too many incorrect attempts. Sign in again to request a new code.',
+        'missing' => 'This verification request is no longer active. Sign in again to request a new code.',
+        default => 'We could not verify the code. Please try again.',
+      };
+    }
+  } elseif ($action === 'resend_otp') {
+    $result = fuzzy_otp_resend($pdo, 'pending_otp', 'adviser_login');
+    $otpMessage = match ($result) {
+      'sent' => 'A new verification code has been sent.',
+      'cooldown' => 'Please wait before requesting another code.',
+      'rate_limited' => 'Too many codes have been requested. Try again later.',
+      'delivery_failed' => 'We could not deliver a new code. Please try again later.',
+      'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
+      'locked' => 'Too many incorrect attempts. Sign in again to request a new code.',
+      'missing' => 'This verification request is no longer active. Sign in again to request a new code.',
+      default => 'We could not resend the code. Please try again.',
+    };
+    $otpMessageType = $result === 'sent' ? 'success' : 'error';
+  } elseif ($action === 'cancel_otp') {
+    fuzzy_otp_invalidate_pending($pdo);
+    $error = 'Email verification was cancelled. No Adviser dashboard session was created.';
   } else {
     unset($_SESSION['user']);
     $identifier = strtoupper(trim((string) ($_POST['csucc_id'] ?? ($_POST['email'] ?? ''))));
     $password = (string) ($_POST['password'] ?? '');
 
     if ($identifier === '') {
-      $error = 'Enter your CSUCC ID Number.';
+      $error = 'Enter your CSUCC ID Number or email address.';
     } elseif ($password === '') {
       $error = 'Enter your password.';
     } else {
       $identifierQuery = $identifier;
-      $stmt = $pdo->prepare('SELECT id, email, full_name, password_hash, role, account_id, department, can_evaluate, student_id_number, employee_id_number FROM users WHERE email = ? OR student_id_number = ? OR employee_id_number = ? OR account_id = ? LIMIT 1');
+      $stmt = $pdo->prepare('SELECT id, email, full_name, password_hash, role, account_id, department, can_evaluate, student_id_number, employee_id_number, group_name, email_verified_at FROM users WHERE email = ? OR student_id_number = ? OR employee_id_number = ? OR account_id = ? LIMIT 1');
       $stmt->execute([$identifier, $identifierQuery, $identifierQuery, $identifier]);
       $user = $stmt->fetch(PDO::FETCH_ASSOC);
       $destinations = [
         'dean' => 'dean/dashboard.php',
         'evaluator' => 'evaluator/dashboard.php',
         'student' => 'students/student_dashboard.php',
+        'adviser' => 'adviser/dashboard.php',
       ];
 
       if (
@@ -54,16 +100,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && password_verify($password, $user['password_hash'])
         && isset($destinations[$user['role']])
       ) {
-        session_regenerate_id(true);
-        unset($user['password_hash']);
-        $_SESSION['user'] = $user;
-        header('Location: ' . $destinations[$user['role']]);
-        exit;
+        if ($user['role'] === 'student' && empty($user['email_verified_at'])) {
+          $error = 'This student account is not verified. Return to registration and submit the same details to request a verification code.';
+        } elseif ($user['role'] === 'adviser' && empty($user['email_verified_at'])) {
+          session_regenerate_id(true);
+          $otpResult = fuzzy_otp_begin($pdo, (int) $user['id'], (string) $user['email'], 'adviser_login');
+          if ($otpResult === 'sent') {
+            $otpMessage = "We've sent a 6-digit verification code to your registered email address.";
+            $otpMessageType = 'success';
+            $showAdviserOtp = true;
+          } else {
+            $error = match ($otpResult) {
+              'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
+              'delivery_failed' => 'We could not deliver your verification code. Try signing in again later.',
+              'rate_limited' => 'Too many verification codes have been requested. Try again later.',
+              'cooldown' => 'Please wait before requesting another verification code.',
+              'invalid_email' => 'Your account does not have a valid email address. Contact the Dean to update it before signing in.',
+              default => 'We could not start email verification. Please try again.',
+            };
+          }
+        } else {
+          session_regenerate_id(true);
+          unset($user['password_hash']);
+          $_SESSION['user'] = $user;
+          header('Location: ' . $destinations[$user['role']]);
+          exit;
+        }
       } else {
         $error = 'Invalid credentials';
       }
     }
   }
+}
+
+$adviserOtpRow = fuzzy_otp_pending_row($pdo);
+if ($adviserOtpRow && ($adviserOtpRow['purpose'] ?? '') === 'adviser_login') {
+  $showAdviserOtp = true;
+  $otpExpiresIn = max(0, (int) $adviserOtpRow['seconds_until_expiry']);
+  $otpResendIn = max(0, 60 - (int) $adviserOtpRow['seconds_since_send']);
 }
 ?>
 <!doctype html>
@@ -71,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="utf-8">
   <title>Capstone Evaluation System - BSIT Capstone Portal</title>
-  <link rel="stylesheet" href="assets/style.css?v=20261113a">
+  <link rel="stylesheet" href="assets/style.css?v=20261114-otp">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" type="image/png" href="favicon.png?v=20261104">
 </head>
@@ -119,17 +193,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           <?php endif; ?>
           <?php if (!empty($error)): ?><div class="home-alert" id="login-error" role="alert"><?=esc($error)?></div><?php endif; ?>
+          <?php if ($otpMessage !== '' && !$showAdviserOtp): ?><div class="home-alert" role="alert"><?=esc($otpMessage)?></div><?php endif; ?>
           <form method="post" id="login-form" novalidate>
               <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
               <input type="hidden" name="action" value="login">
-              <label for="home-identifier">CSUCC ID NUMBER</label>
-              <input id="home-identifier" name="csucc_id" type="text" value="<?=esc($loginIdentifier)?>" placeholder="Enter your CSUCC ID Number" autocomplete="username" required aria-describedby="home-identifier-error">
+              <label for="home-identifier">CSUCC ID NUMBER OR EMAIL</label>
+              <input id="home-identifier" name="csucc_id" type="text" value="<?=esc($loginIdentifier)?>" placeholder="Enter your CSUCC ID Number or email" autocomplete="username" required aria-describedby="home-identifier-error">
               <p class="login-field-error" id="home-identifier-error" aria-live="polite"></p>
               <label for="home-password">Password</label>
               <div class="home-password-field"><input id="home-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required aria-describedby="home-password-error"><button class="home-password-toggle" type="button" aria-label="Show password" aria-controls="home-password" aria-pressed="false">&#128065;</button></div>
               <p class="login-field-error" id="home-password-error" aria-live="polite"></p>
               <button class="home-submit" type="submit">Sign in to portal <span aria-hidden="true">-&gt;</span></button>
           </form>
+          <?php if ($showAdviserOtp): ?>
+            <dialog class="email-otp-modal" id="adviser-otp-modal" aria-labelledby="adviser-otp-title">
+              <div class="email-otp-content">
+                <p class="register-overline">EMAIL VERIFICATION</p>
+                <h2 id="adviser-otp-title">Verify Your Email</h2>
+                <p class="email-otp-intro">We've sent a 6-digit verification code to your registered email address.</p>
+                <p class="email-otp-address">Code sent to <strong><?=esc(fuzzy_otp_mask_email((string) ($_SESSION['pending_otp']['email'] ?? '')))?></strong></p>
+                <?php if ($otpMessage !== ''): ?><div class="email-otp-message <?=$otpMessageType === 'success' ? 'is-success' : ''?>" role="<?=$otpMessageType === 'success' ? 'status' : 'alert'?>"><?=esc($otpMessage)?></div><?php endif; ?>
+                <form method="post" class="email-otp-verify-form">
+                  <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
+                  <input type="hidden" name="action" value="verify_otp">
+                  <label for="adviser-otp-code">6-digit verification code</label>
+                  <input id="adviser-otp-code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-label="6-digit verification code" required>
+                  <div class="email-otp-timers"><span>Code expires in <strong id="adviser-otp-expiry"></strong></span><span id="adviser-otp-resend-countdown"></span></div>
+                  <button class="home-submit" type="submit">Verify &amp; Continue</button>
+                </form>
+                <div class="email-otp-actions">
+                  <form method="post" id="adviser-otp-resend-form">
+                    <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
+                    <input type="hidden" name="action" value="resend_otp">
+                    <button class="email-otp-link" id="adviser-otp-resend-button" type="submit">Resend OTP</button>
+                  </form>
+                  <form method="post">
+                    <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
+                    <input type="hidden" name="action" value="cancel_otp">
+                    <button class="email-otp-link" type="submit">Cancel verification</button>
+                  </form>
+                </div>
+              </div>
+            </dialog>
+          <?php endif; ?>
           <p class="register-prompt">New to the system? <a href="register.php">Create an account</a></p>
           <div class="security-assurance" aria-label="Data protection information">
             <div class="security-badge" aria-hidden="true">🛡️</div>
@@ -176,6 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <article><span class="actor-number">01</span><div class="actor-icon">D</div><h3>IT Chairperson</h3><p>Manages users, projects, evaluator assignments, fuzzy rules, membership functions, analytics, and reports.</p><a href="#login">IT Chairperson access <span>-&gt;</span></a></article>
         <article><span class="actor-number">02</span><div class="actor-icon">E</div><h3>Evaluator</h3><p>Evaluates assigned capstone projects and papers, then records feedback for the project team.</p><a href="#login">Evaluator access <span>-&gt;</span></a></article>
         <article><span class="actor-number">03</span><div class="actor-icon">S</div><h3>Defendee</h3><p>Views capstone status, scores, feedback, history, and the fuzzy explanation behind the result.</p><a href="#login">Student access <span>-&gt;</span></a></article>
+        <article><span class="actor-number">04</span><div class="actor-icon">A</div><h3>Adviser</h3><p>Views only the capstone projects assigned to the Adviser account by the Dean.</p><a href="#login">Adviser access <span>-&gt;</span></a></article>
       </div>
     </section>
 
@@ -241,7 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     loginForm?.addEventListener('submit', (event) => {
-      const identifierValid = validateLoginField(loginIdentifier, 'CSUCC ID Number is required.');
+      const identifierValid = validateLoginField(loginIdentifier, 'CSUCC ID Number or email is required.');
       const passwordValid = validateLoginField(loginPassword, 'Password is required.');
       if (!identifierValid || !passwordValid) {
         event.preventDefault();
@@ -250,7 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     });
 
     [loginIdentifier, loginPassword].forEach((field) => field?.addEventListener('input', () => {
-      validateLoginField(field, field === loginIdentifier ? 'CSUCC ID Number is required.' : 'Password is required.');
+      validateLoginField(field, field === loginIdentifier ? 'CSUCC ID Number or email is required.' : 'Password is required.');
     }));
 
     passwordToggle?.addEventListener('click', () => {
@@ -259,6 +366,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       passwordToggle.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
       passwordToggle.setAttribute('aria-pressed', String(!visible));
     });
+
+    const adviserOtpDialog = document.getElementById('adviser-otp-modal');
+    const adviserOtpInput = document.getElementById('adviser-otp-code');
+    adviserOtpInput?.addEventListener('input', () => {
+      adviserOtpInput.value = adviserOtpInput.value.replace(/\D/g, '').slice(0, 6);
+    });
+    <?php if ($showAdviserOtp): ?>
+    adviserOtpDialog?.showModal();
+    adviserOtpInput?.focus();
+    let adviserExpirySeconds = <?= (int) $otpExpiresIn ?>;
+    let adviserResendSeconds = <?= (int) $otpResendIn ?>;
+    const adviserExpiryText = document.getElementById('adviser-otp-expiry');
+    const adviserResendText = document.getElementById('adviser-otp-resend-countdown');
+    const adviserResendButton = document.getElementById('adviser-otp-resend-button');
+    const formatOtpTime = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    const updateAdviserOtpTimers = () => {
+      adviserExpiryText.textContent = formatOtpTime(adviserExpirySeconds);
+      adviserResendButton.disabled = adviserResendSeconds > 0;
+      adviserResendText.textContent = adviserResendSeconds > 0 ? `Resend available in ${formatOtpTime(adviserResendSeconds)}` : 'You can request a new code.';
+      if (adviserExpirySeconds > 0) adviserExpirySeconds -= 1;
+      if (adviserResendSeconds > 0) adviserResendSeconds -= 1;
+    };
+    updateAdviserOtpTimers();
+    window.setInterval(updateAdviserOtpTimers, 1000);
+    <?php endif; ?>
   </script>
 </body>
 </html>

@@ -1,13 +1,8 @@
 <?php
 require_once __DIR__ . '/../config.php';
-session_start();
-
-if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'student') {
-    http_response_code(403);
-    exit('Forbidden');
-}
-
-$studentId = (int) $_SESSION['user']['id'];
+require_once __DIR__ . '/../php/student_auth.php';
+$user = require_verified_student($pdo);
+$studentId = (int) $user['id'];
 $submissionId = (int) ($_GET['id'] ?? 0);
 $stmt = $pdo->prepare('SELECT * FROM student_submissions WHERE id = ? AND student_id = ? LIMIT 1');
 $stmt->execute([$submissionId, $studentId]);

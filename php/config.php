@@ -291,6 +291,7 @@ function generate_account_id(
         'dean'      => 'ITCHAIR',
         'evaluator' => 'EVAL',
         'student'   => 'STUD',
+        'adviser'   => 'ADV',
     ];
 
     $prefix = $prefixMap[$role] ?? 'USER';
