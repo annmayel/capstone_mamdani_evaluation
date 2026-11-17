@@ -6,7 +6,11 @@
 /storage/submissions/*
 !/storage/submissions/.htaccess
 /php/vendor/
-/profile_dev/
+!/profile_dev/
+/profile_dev/*
+!/profile_dev/ronela2.jpg
+!/profile_dev/mayel2.jpg
+!/profile_dev/jane.jpg
 /php/check_users.php
 /dean/setup_passwords.php
 /tools/set_user_password.php
