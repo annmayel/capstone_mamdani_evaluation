@@ -46,7 +46,7 @@ $displayStatus = $latestSubmission
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Project Submission - Capstone Evaluation System - Student Portal</title>
-  <link rel="stylesheet" href="/Fuzzy_Score/assets/style.css?v=20261011">
+  <link rel="stylesheet" href="/assets/style.css?v=20261011">
   <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
 </head>
 <body class="student-portal">
