@@ -103,14 +103,17 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
 ?>
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Capstone Evaluation System - IT Chairperson Portal</title>
-<link rel="stylesheet" href="../assets/style.css?v=20261112"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
+<link rel="stylesheet" href="../assets/style.css?v=20261119"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
 <body class="dean-dashboard">
   <div class="dashboard-layout dean-dashboard-layout">
     <div class="sidebar">
       <div class="sidebar-header">
         <img class="logo-icon" src="../images_bgnd/CSUCC%20LOGO.png" alt="" aria-hidden="true">
-        <div>Capstone <span>Evaluation System</span></div>
-        <button class="dean-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="brand-copy">
+          <span class="brand-line">CAPSTONE</span>
+          <span class="brand-line brand-emphasis">EVALUATION SYSTEM</span>
+          <small>CHAIRPERSON PORTAL</small>
+        </div>
       </div>
       <ul class="sidebar-nav">
         <li class="nav-section-label">Main</li>
@@ -144,7 +147,6 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
         </div>
       </div>
     </div>
-    <button class="dean-sidebar-backdrop" type="button" aria-label="Close navigation" tabindex="-1" hidden></button>
     <div class="main-content">
       <header class="dean-topbar">
         <div class="dean-topbar-title"><strong id="dean-page-title">IT Chairperson Dashboard</strong><small>Capstone Evaluation System</small></div>
@@ -506,52 +508,5 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
     options: {responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: {legend: {display: false}}}
   });
 
-  const sidebar = document.querySelector('.dean-dashboard-layout .sidebar');
-  const sidebarToggle = document.querySelector('.dean-sidebar-toggle');
-  const sidebarBackdrop = document.querySelector('.dean-sidebar-backdrop');
-  const mobileNavigation = window.matchMedia('(max-width: 820px)');
-  const closeMobileNavigation = () => {
-    sidebar?.classList.remove('is-mobile-open');
-    if (sidebarToggle) {
-      sidebarToggle.setAttribute('aria-expanded', 'false');
-      sidebarToggle.setAttribute('aria-label', 'Open navigation');
-      sidebarToggle.title = 'Open navigation';
-    }
-    if (sidebarBackdrop) sidebarBackdrop.hidden = true;
-  };
-  sidebarToggle?.addEventListener('click', () => {
-    if (mobileNavigation.matches) {
-      const isOpen = sidebar.classList.toggle('is-mobile-open');
-      sidebarToggle.setAttribute('aria-expanded', String(isOpen));
-      sidebarToggle.setAttribute('aria-label', isOpen ? 'Close navigation' : 'Open navigation');
-      sidebarToggle.title = isOpen ? 'Close navigation' : 'Open navigation';
-      if (sidebarBackdrop) sidebarBackdrop.hidden = !isOpen;
-      return;
-    }
-    const isCollapsed = sidebar.classList.toggle('is-collapsed');
-    sidebarToggle.setAttribute('aria-expanded', String(!isCollapsed));
-    sidebarToggle.setAttribute('aria-label', isCollapsed ? 'Expand sidebar' : 'Collapse sidebar');
-    sidebarToggle.title = isCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
-    localStorage.setItem('dean-sidebar-collapsed', String(isCollapsed));
-  });
-  sidebarBackdrop?.addEventListener('click', closeMobileNavigation);
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && mobileNavigation.matches) closeMobileNavigation();
-  });
-  document.querySelectorAll('.dean-dashboard-layout .sidebar-nav a[onclick]').forEach(link => {
-    link.addEventListener('click', () => {
-      if (mobileNavigation.matches) closeMobileNavigation();
-    });
-  });
-  if (mobileNavigation.matches) {
-    sidebarToggle?.setAttribute('aria-expanded', 'false');
-    sidebarToggle?.setAttribute('aria-label', 'Open navigation');
-    if (sidebarToggle) sidebarToggle.title = 'Open navigation';
-  } else if (localStorage.getItem('dean-sidebar-collapsed') === 'true') {
-    sidebar?.classList.add('is-collapsed');
-    sidebarToggle?.setAttribute('aria-expanded', 'false');
-    sidebarToggle?.setAttribute('aria-label', 'Expand sidebar');
-    if (sidebarToggle) sidebarToggle.title = 'Expand sidebar';
-  }
   </script>
 </body></html>
