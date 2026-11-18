@@ -2858,10 +2858,11 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
   transition:none;
 }
 .dean-dashboard-layout .sidebar-header {
-  gap:10px;
+  align-items:center;
+  gap:14px;
   min-height:0;
-  margin-bottom:14px;
-  padding:4px 6px 16px;
+  margin-bottom:20px;
+  padding:8px 8px 20px;
   border-bottom:1px solid rgba(255,255,255,.08);
   color:#E7EEED;
   font:700 14px/1.2 'Poppins',sans-serif;
@@ -2869,18 +2870,19 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
   white-space:normal;
 }
 .dean-dashboard-layout .sidebar-header .logo-icon { width:32px; height:32px; flex-basis:32px; }
-.dean-dashboard-layout .sidebar-header .brand-copy { display:flex; min-width:0; flex-direction:column; gap:2px; }
+.dean-dashboard-layout .sidebar-header .brand-copy { display:flex; min-width:0; flex-direction:column; gap:4px; }
 .dean-dashboard-layout .sidebar-header .brand-line {
   display:block;
   color:#E7EEED;
   font-size:12px;
   letter-spacing:.14em;
-  line-height:1.2;
+  line-height:1.35;
   white-space:nowrap;
 }
 .dean-dashboard-layout .sidebar-header .brand-emphasis { color:#B98B68; }
 .dean-dashboard-layout .sidebar-header .brand-copy small {
   display:block;
+  margin-top:1px;
   color:rgba(231,238,237,.7);
   font-size:8px;
   letter-spacing:.18em;
@@ -2980,9 +2982,9 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
 @media (max-width:600px) {
   .dean-dashboard-layout > .sidebar,
   .dean-dashboard-layout > .sidebar.is-collapsed { width:188px; padding:14px 10px; }
-  .dean-dashboard-layout > .sidebar .sidebar-header { gap:7px; padding-right:2px; padding-left:2px; }
+  .dean-dashboard-layout > .sidebar .sidebar-header { gap:10px; padding-right:4px; padding-left:4px; }
   .dean-dashboard-layout .sidebar-header .logo-icon { width:28px; height:28px; flex-basis:28px; }
-  .dean-dashboard-layout .sidebar-header .brand-line { font-size:10px; }
+  .dean-dashboard-layout .sidebar-header .brand-line { font-size:10px; letter-spacing:.08em; }
   .dean-dashboard-layout .sidebar-header .brand-copy small { font-size:7px; }
   .dean-dashboard-layout .sidebar-nav .nav-section-label { padding-left:32px; font-size:8px; }
   .dean-dashboard-layout .sidebar-nav li a { gap:8px; padding:8px; font-size:11px; }

@@ -103,7 +103,7 @@ $unreadNotifications = count(array_filter($deanNotifications, static fn($notific
 ?>
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Capstone Evaluation System - IT Chairperson Portal</title>
-<link rel="stylesheet" href="../assets/style.css?v=20261119"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
+<link rel="stylesheet" href="../assets/style.css?v=20261120"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
 <body class="dean-dashboard">
   <div class="dashboard-layout dean-dashboard-layout">
     <div class="sidebar">
