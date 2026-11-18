@@ -2496,7 +2496,7 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
 .dean-assignment-page .assignment-page,
 .fuzzy-rules-module-page .fuzzy-rules-page,
 .dean-submissions-shell { width:100%; max-width:none; margin:0; padding:0; }
-.setup-page .setup-shell { display:grid; gap:14px; }
+.setup-page .setup-shell { display:grid; max-width:1240px; margin:0 auto; gap:14px; }
 .setup-page .setup-page-heading { margin:0; }
 .setup-page .setup-card,
 .dean-table-panel,
@@ -2514,12 +2514,12 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
 }
 .setup-page .setup-card { padding:17px; }
 .setup-page .setup-card > h3 { margin:0 0 13px; font-size:16px; }
-.setup-page .setup-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.setup-page .setup-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .setup-page .setup-grid label,
-.setup-page label { color:#526a72; font-size:12px; font-weight:600; }
+.setup-page label { min-width:0; color:#526a72; font-size:12px; font-weight:600; }
 .setup-page .setup-grid input,
 .setup-page .setup-grid select,
-.setup-page .setup-grid textarea { min-height:38px; padding:8px 10px; border:1px solid #cdd9da; border-radius:6px; font:13px 'Poppins',sans-serif; }
+.setup-page .setup-grid textarea { width:100%; min-height:38px; padding:8px 10px; border:1px solid #cdd9da; border-radius:6px; font:13px 'Poppins',sans-serif; }
 .setup-page .setup-grid textarea { min-height:76px; }
 .setup-page .setup-project-list { padding:17px; }
 .setup-page .setup-table-heading h3 { font-size:16px; }
@@ -2883,6 +2883,10 @@ body.dean-assignment-page * { font-family:'Poppins',sans-serif !important; }
 .dean-submissions-page .table-container th { font-size:11px; }
 .dean-submissions-page .table-container td small { font-size:11px; }
 .dean-submissions-page .submission-actions .btn { font-size:11px; }
+
+@media (min-width:651px) {
+  body.setup-page { padding-left:clamp(14px,1.4vw,22px) !important; padding-right:clamp(14px,1.4vw,22px) !important; }
+}
 .dean-membership-page > table th { font-size:11px; }
 .dean-membership-page > table td { font-size:12px; }
 .dean-dashboard .email-delivery .email-summary-card span { font-size:11px; }
