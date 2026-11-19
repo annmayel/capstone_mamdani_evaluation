@@ -353,7 +353,7 @@ function fuzzy_otp_verify(PDO $pdo, string $code, string $sessionKey = 'pending_
 			return ['status' => 'invalid', 'attempts_left' => 5 - $attempts];
 		}
 
-		$userStmt = $pdo->prepare('SELECT id, email, full_name, role, account_id, department, can_evaluate, student_id_number, group_name, employee_id_number, email_verified_at FROM users WHERE id = ? LIMIT 1');
+		$userStmt = $pdo->prepare('SELECT id, email, full_name, role, account_id, department, can_evaluate, student_id_number, group_name, employee_id_number, email_verified_at, student_approved_at FROM users WHERE id = ? LIMIT 1');
 		$userStmt->execute([(int) $row['user_id']]);
 		$user = $userStmt->fetch(PDO::FETCH_ASSOC);
 		$purpose = (string) $row['purpose'];
@@ -401,6 +401,10 @@ function fuzzy_otp_verify(PDO $pdo, string $code, string $sessionKey = 'pending_
 
 	session_regenerate_id(true);
 	unset($_SESSION[$sessionKey]);
+	if ($purpose === 'student_registration' && empty($user['student_approved_at'])) {
+		unset($_SESSION['user']);
+		return ['status' => 'awaiting_approval', 'user' => $user];
+	}
 	$_SESSION['user'] = $user;
 	return ['status' => 'verified', 'user' => $user];
 }

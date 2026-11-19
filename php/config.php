@@ -128,9 +128,9 @@ try {
     | OPTIONAL SCHEMA AUTO-MIGRATION
     |--------------------------------------------------------------------------
     |
-    | Older Railway/XAMPP databases may not have the email-OTP adviser migration
-    | applied yet. Add the columns the application queries, keeping startup
-    | backward-compatible until the SQL migration is run manually.
+    | Older Railway/XAMPP databases may not have the email-OTP or student
+    | approval columns yet. Add the columns the application queries, keeping
+    | startup backward-compatible until the SQL migrations are run manually.
     */
 
     try {
@@ -146,6 +146,16 @@ try {
                 "UPDATE `users`
                  SET `email_verified_at` = UTC_TIMESTAMP()
                  WHERE `role` = 'student'"
+            );
+        }
+
+        $studentApprovalColumn = $pdo->query("SHOW COLUMNS FROM `users` LIKE 'student_approved_at'")
+            ->fetch(PDO::FETCH_ASSOC);
+
+        if (!$studentApprovalColumn) {
+            $pdo->exec(
+                "ALTER TABLE `users`
+                 ADD COLUMN `student_approved_at` DATETIME DEFAULT NULL AFTER `email_verified_at`"
             );
         }
 

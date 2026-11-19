@@ -293,6 +293,7 @@ CREATE TABLE `users` (
   `employee_id_number` varchar(50) DEFAULT NULL,
   `email` varchar(150) NOT NULL,
   `email_verified_at` datetime DEFAULT NULL,
+  `student_approved_at` datetime DEFAULT NULL,
   `password_hash` varchar(255) NOT NULL,
   `role` enum('dean','evaluator','student','adviser') NOT NULL,
   `account_id` varchar(30) DEFAULT NULL,

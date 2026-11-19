@@ -63,7 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$otpMessage = 'Enter the 6-digit verification code.';
 		} else {
 			$result = fuzzy_otp_verify($pdo, $otpCode, $otpSessionKey, 'student_registration');
-			if ($result['status'] === 'verified') {
+			if ($result['status'] === 'awaiting_approval') {
+				$_SESSION['approval_pending_notice'] = 'Your CSUCC email is verified. Your student account is waiting for Chairperson approval before you can sign in.';
+				header('Location: ../index.php?approval_pending=1');
+				exit;
+			} elseif ($result['status'] === 'verified') {
 				$verifiedUser = $result['user'];
 				$userId = (int) $verifiedUser['id'];
 				require_once __DIR__ . '/email_notifications.php';

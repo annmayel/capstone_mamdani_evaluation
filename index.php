@@ -2,6 +2,7 @@
 // Simple login router for prototype
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/php/otp_auth.php';
+require_once __DIR__ . '/php/student_auth.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_set_cookie_params([
@@ -13,6 +14,9 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 $error = '';
 $error = isset($_GET['verification_required']) ? 'Your account must be email-verified before dashboard access. Sign in to continue the verification process.' : $error;
+$error = isset($_GET['approval_required']) ? 'Your student account is waiting for Chairperson approval. You can sign in after it is approved.' : $error;
+$approvalNotice = isset($_GET['approval_pending']) ? (string) ($_SESSION['approval_pending_notice'] ?? '') : '';
+unset($_SESSION['approval_pending_notice']);
 $registrationSuccess = $_SERVER['REQUEST_METHOD'] === 'GET'
   ? ($_SESSION['registration_success'] ?? null)
   : null;
@@ -84,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $error = 'Enter your password.';
     } else {
       $identifierQuery = $identifier;
-      $stmt = $pdo->prepare('SELECT id, email, full_name, password_hash, role, account_id, department, can_evaluate, student_id_number, employee_id_number, group_name, email_verified_at FROM users WHERE email = ? OR student_id_number = ? OR employee_id_number = ? OR account_id = ? LIMIT 1');
+      $stmt = $pdo->prepare('SELECT id, email, full_name, password_hash, role, account_id, department, can_evaluate, student_id_number, employee_id_number, group_name, email_verified_at, student_approved_at FROM users WHERE email = ? OR student_id_number = ? OR employee_id_number = ? OR account_id = ? LIMIT 1');
       $stmt->execute([$identifier, $identifierQuery, $identifierQuery, $identifier]);
       $user = $stmt->fetch(PDO::FETCH_ASSOC);
       $destinations = [
@@ -100,8 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && password_verify($password, $user['password_hash'])
         && isset($destinations[$user['role']])
       ) {
-        if ($user['role'] === 'student' && empty($user['email_verified_at'])) {
+        if ($user['role'] === 'student' && student_account_access_status($user) === 'email_unverified') {
           $error = 'This student account is not verified. Return to registration and submit the same details to request a verification code.';
+        } elseif ($user['role'] === 'student' && student_account_access_status($user) === 'approval_pending') {
+          $error = 'Your email is verified, but your student account is waiting for Chairperson approval.';
         } elseif ($user['role'] === 'adviser' && empty($user['email_verified_at'])) {
           session_regenerate_id(true);
           $otpResult = fuzzy_otp_begin($pdo, (int) $user['id'], (string) $user['email'], 'adviser_login');
@@ -192,6 +198,7 @@ if ($adviserOtpRow && ($adviserOtpRow['purpose'] ?? '') === 'adviser_login') {
               <?php endif; ?>
             </div>
           <?php endif; ?>
+          <?php if ($approvalNotice !== ''): ?><div class="home-alert home-success" role="status"><?=esc($approvalNotice)?></div><?php endif; ?>
           <?php if (!empty($error)): ?><div class="home-alert" id="login-error" role="alert"><?=esc($error)?></div><?php endif; ?>
           <?php if ($otpMessage !== '' && !$showAdviserOtp): ?><div class="home-alert" role="alert"><?=esc($otpMessage)?></div><?php endif; ?>
           <form method="post" id="login-form" novalidate>

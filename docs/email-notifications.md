@@ -37,6 +37,8 @@ Before deploying OTP-enabled PHP code to an existing database, select the databa
 
 Run this migration before the application deployment so login and registration requests do not query columns that have not been added. Fresh schema imports already include these fields.
 
+Student email verification is followed by Chairperson approval. Run `sql/migrations/016_student_account_approval.sql` for existing databases; existing and new student accounts remain pending until a Dean approves them in **Manage Users**. A student can sign in only after both email verification and Chairperson approval. The app also adds this nullable column at startup when needed.
+
 ## Sending and retrying
 
 Event handling queues delivery after saving the portal event. Unique email and in-app event keys prevent normal repeated requests from queuing the same event twice, and a stable message ID is used for email retries. SMTP is not an exactly-once transport: a disconnect after the receiving server accepts a message but before it confirms acceptance can still lead to a duplicate if retried. SMTP failures are recorded and do not roll back submissions or evaluations. To retry pending/failed messages, a dean can open the Email Delivery section of the dean dashboard. Search, status filters, and pagination operate on the server; retry is protected by the dean role, CSRF validation, and a confirmation prompt. Manual retry resets an exhausted attempt count; automatic retries use increasing delays (one minute, five minutes, fifteen minutes, then one hour) and stop after five attempts.
@@ -57,6 +59,6 @@ Students can view their own in-app notifications from the student dashboard, see
 - Account registration confirmation, new project setup, defense-date changes, evaluator assignment, proposal receipt, and dean submission alerts.
 - System and paper evaluation reports using saved scores and remarks.
 - Final fuzzy report only after both evaluation records exist; it uses the official verdict classified from the saved average score.
-- The current portal does not implement account approval/blocking, password reset/change, submission approval/rejection/revision actions, preference management, chapter-level remarks, or configurable evaluation weights. No emails are generated for workflows that do not exist.
+- The current portal does not implement account blocking, password reset/change, submission approval/rejection/revision actions, preference management, chapter-level remarks, or configurable evaluation weights. No emails are generated for workflows that do not exist.
 
 After configuring SMTP, submit a test proposal using a controlled mailbox, save a system evaluation, save a paper evaluation, and confirm each message and the final report in the mailbox. Also inspect the dean email-delivery log for status and retry behavior. Do not treat queued messages as proof of successful email delivery.

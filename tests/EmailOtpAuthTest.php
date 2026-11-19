@@ -3,6 +3,7 @@
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../php/otp_auth.php';
+require_once __DIR__ . '/../php/student_auth.php';
 
 final class EmailOtpAuthTest extends TestCase
 {
@@ -41,5 +42,21 @@ final class EmailOtpAuthTest extends TestCase
 		} finally {
 			unset($_SERVER[$name]);
 		}
+	}
+
+	public function testStudentNeedsVerifiedEmailAndChairpersonApproval(): void
+	{
+		self::assertSame('email_unverified', student_account_access_status([
+			'email_verified_at' => null,
+			'student_approved_at' => null,
+		]));
+		self::assertSame('approval_pending', student_account_access_status([
+			'email_verified_at' => '2026-11-19 01:00:00',
+			'student_approved_at' => null,
+		]));
+		self::assertSame('approved', student_account_access_status([
+			'email_verified_at' => '2026-11-19 01:00:00',
+			'student_approved_at' => '2026-11-19 02:00:00',
+		]));
 	}
 }
