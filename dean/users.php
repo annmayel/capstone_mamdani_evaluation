@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../php/student_auth.php';
 require_dean_access();
 
 $userFormErrors = [];
@@ -14,15 +15,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
   } elseif ($userId < 1) {
     $userFormErrors[] = 'Select a valid student account to approve.';
   } else {
-    $approveStmt = $pdo->prepare("UPDATE users SET student_approved_at = COALESCE(student_approved_at, UTC_TIMESTAMP()) WHERE id = ? AND role = 'student'");
+    $approveStmt = $pdo->prepare("UPDATE users SET student_approved_at = COALESCE(student_approved_at, UTC_TIMESTAMP()) WHERE id = ? AND role = 'student' AND email_verified_at IS NOT NULL");
     $approveStmt->execute([$userId]);
-    $studentStmt = $pdo->prepare("SELECT student_approved_at FROM users WHERE id = ? AND role = 'student' LIMIT 1");
+    $studentStmt = $pdo->prepare("SELECT email_verified_at, student_approved_at FROM users WHERE id = ? AND role = 'student' LIMIT 1");
     $studentStmt->execute([$userId]);
-    $approvedAt = $studentStmt->fetchColumn();
-    if ($approvedAt === false) {
+    $student = $studentStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$student) {
       $userFormErrors[] = 'The selected student account could not be found.';
+    } elseif (empty($student['email_verified_at'])) {
+      $userFormErrors[] = 'The student must verify their email with the OTP before approval.';
     } else {
-      $_SESSION['user_approval_notice'] = 'Student approved. They can sign in after completing email verification.';
+      $_SESSION['user_approval_notice'] = 'Student approved. They can now sign in to access the dashboard.';
       header('Location: users.php?embedded=1');
       exit;
     }
@@ -110,7 +113,8 @@ sort($departments);
     <div class="dean-table-toolbar"><label class="dean-search-field">Search<input type="search" data-table-search placeholder="Search name, email or ID"></label><label>Role<select data-table-filter="role"><option value="">All roles</option><option value="dean">Dean</option><option value="evaluator">Evaluator</option><option value="student">Student</option><option value="adviser">Adviser</option></select></label><label>Department<select data-table-filter="department"><option value="">All departments</option><?php foreach ($departments as $department): ?><option value="<?=esc($department)?>"><?=esc($department)?></option><?php endforeach; ?></select></label></div>
     <div class="dean-table-scroll"><table class="dean-data-table"><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Account ID</th><th>Student approval</th><th>Actions</th></tr></thead><tbody>
       <?php foreach ($users as $user): $identityId = $user['student_id_number'] ?: ($user['employee_id_number'] ?? ''); $displayAccountId = $identityId ?: ($user['account_id'] ?? ''); ?>
-        <tr data-table-row data-role="<?=esc(strtolower($user['role']))?>" data-department="<?=esc(strtolower((string) $user['department']))?>" data-search="<?=esc(strtolower(implode(' ', [$user['id'], $user['full_name'], $user['email'], $user['role'], $user['department'], $identityId, $displayAccountId, $user['group_name']])))?>"><td><?=esc($user['id'])?></td><td><strong><?=esc($user['full_name'])?></strong></td><td><?=esc($user['email'])?></td><td><span class="role-label role-<?=esc($user['role'])?>"><?=esc(ucfirst($user['role']))?></span></td><td><?=esc($user['department'] ?: 'Not set')?></td><td><?=esc($displayAccountId ?: 'Not set')?></td><td><?php if ($user['role'] === 'student'): ?><span class="role-label"><?=!empty($user['student_approved_at']) ? 'Approved' : 'Pending approval'?></span><?php if (empty($user['email_verified_at'])): ?><small> Email OTP required</small><?php endif; ?><?php else: ?>N/A<?php endif; ?></td><td><div class="dean-row-actions"><button class="dean-action-button" type="button" data-user-view data-name="<?=esc($user['full_name'])?>" data-email="<?=esc($user['email'])?>" data-role-label="<?=esc(ucfirst($user['role']))?>" data-department="<?=esc($user['department'] ?: 'Not set')?>" data-account-id="<?=esc($displayAccountId ?: 'Not set')?>" data-group="<?=esc($user['group_name'] ?: 'Not set')?>">View</button><button class="dean-action-button" type="button" data-user-edit data-id="<?=esc($user['id'])?>" data-name="<?=esc($user['full_name'])?>" data-email="<?=esc($user['email'])?>" data-role-label="<?=esc(ucfirst($user['role']))?>" data-department="<?=esc($user['department'] ?: '')?>" data-account-id="<?=esc($identityId ?: '')?>">Edit</button><?php if ($user['role'] === 'student' && empty($user['student_approved_at'])): ?><form method="post"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="action" value="approve_student"><input type="hidden" name="user_id" value="<?=esc($user['id'])?>"><button class="dean-action-button" type="submit" aria-label="Approve account for <?=esc($user['full_name'])?>">Accept</button></form><?php endif; ?></div></td></tr>
+        <?php $studentAccessStatus = $user['role'] === 'student' ? student_account_access_status($user) : 'not_applicable'; ?>
+        <tr data-table-row data-role="<?=esc(strtolower($user['role']))?>" data-department="<?=esc(strtolower((string) $user['department']))?>" data-search="<?=esc(strtolower(implode(' ', [$user['id'], $user['full_name'], $user['email'], $user['role'], $user['department'], $identityId, $displayAccountId, $user['group_name']])))?>"><td><?=esc($user['id'])?></td><td><strong><?=esc($user['full_name'])?></strong></td><td><?=esc($user['email'])?></td><td><span class="role-label role-<?=esc($user['role'])?>"><?=esc(ucfirst($user['role']))?></span></td><td><?=esc($user['department'] ?: 'Not set')?></td><td><?=esc($displayAccountId ?: 'Not set')?></td><td><?php if ($studentAccessStatus === 'email_unverified'): ?><span class="role-label">Email verification pending</span><?php elseif ($studentAccessStatus === 'approval_pending'): ?><span class="role-label">Pending approval</span><?php elseif ($studentAccessStatus === 'approved'): ?><span class="role-label">Approved</span><?php else: ?>N/A<?php endif; ?></td><td><div class="dean-row-actions"><button class="dean-action-button" type="button" data-user-view data-name="<?=esc($user['full_name'])?>" data-email="<?=esc($user['email'])?>" data-role-label="<?=esc(ucfirst($user['role']))?>" data-department="<?=esc($user['department'] ?: 'Not set')?>" data-account-id="<?=esc($displayAccountId ?: 'Not set')?>" data-group="<?=esc($user['group_name'] ?: 'Not set')?>">View</button><button class="dean-action-button" type="button" data-user-edit data-id="<?=esc($user['id'])?>" data-name="<?=esc($user['full_name'])?>" data-email="<?=esc($user['email'])?>" data-role-label="<?=esc(ucfirst($user['role']))?>" data-department="<?=esc($user['department'] ?: '')?>" data-account-id="<?=esc($identityId ?: '')?>">Edit</button><?php if ($studentAccessStatus === 'approval_pending'): ?><form method="post"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="action" value="approve_student"><input type="hidden" name="user_id" value="<?=esc($user['id'])?>"><button class="dean-action-button" type="submit" aria-label="Approve account for <?=esc($user['full_name'])?>">Accept</button></form><?php endif; ?></div></td></tr>
       <?php endforeach; ?>
     </tbody></table></div>
     <div class="dean-table-footer"><span data-table-count></span><label>Rows<select data-page-size><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><nav data-table-pagination aria-label="User table pages"><button type="button" data-page-prev>Previous</button><span data-page-indicator></span><button type="button" data-page-next>Next</button></nav></div>
