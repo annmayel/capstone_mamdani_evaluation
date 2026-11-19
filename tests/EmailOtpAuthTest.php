@@ -30,4 +30,16 @@ final class EmailOtpAuthTest extends TestCase
 	{
 		self::assertSame('s******@csucc.edu.ph', fuzzy_otp_mask_email('student@csucc.edu.ph'));
 	}
+
+	public function testEnvironmentValueCanBeReadFromServerVariables(): void
+	{
+		$name = 'FUZZY_OTP_TEST_SERVER_ENV_' . bin2hex(random_bytes(8));
+		$_SERVER[$name] = 'server-value';
+
+		try {
+			self::assertSame('server-value', fuzzy_otp_environment_value($name));
+		} finally {
+			unset($_SERVER[$name]);
+		}
+	}
 }

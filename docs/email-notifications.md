@@ -10,7 +10,7 @@ For a database that already has the outbox table, also run `sql/migrations/011_e
 
 ## Configure SMTP
 
-Set these environment variables for the PHP/Apache process, then restart Apache:
+Set these variables for the PHP/Apache process. The four required settings are `FUZZY_SMTP_HOST`, `FUZZY_SMTP_USERNAME`, `FUZZY_SMTP_PASSWORD`, and `FUZZY_SMTP_FROM_EMAIL`. Set `FUZZY_SMTP_PORT` and `FUZZY_SMTP_ENCRYPTION` to match your provider (they default to `587` and `tls`); `FUZZY_SMTP_FROM_NAME` is optional:
 
 ```text
 FUZZY_SMTP_HOST=smtp.example.com
@@ -23,7 +23,9 @@ FUZZY_SMTP_FROM_NAME=Capstone Fuzzy Student Portal
 FUZZY_PORTAL_BASE_URL=https://portal.example.edu
 ```
 
-Do not put real credentials in this project or commit them. On a local XAMPP installation, configure process/system environment variables outside the web root and restart Apache so PHP can read them. `FUZZY_PORTAL_BASE_URL` should point to the portal's public base URL (for example `http://localhost/Fuzzy_Score` for local testing); email links are omitted when it is not a valid HTTP(S) URL.
+Do not put real credentials in this project or commit them. In Railway, add these variables to the PHP application service's **Variables** (not only the MySQL service), then redeploy. Use the SMTP provider's host, port, and encryption mode; the username/password must be valid SMTP credentials, and the from address must be an address the provider permits you to send as. The app logs only the names of missing or invalid settings, never their values.
+
+On a local XAMPP installation, configure process/system environment variables outside the web root and restart Apache so PHP can read them. The portal accepts values exposed by PHP through `getenv()`, `$_SERVER`, or `$_ENV`. `FUZZY_PORTAL_BASE_URL` is optional for verification and should point to the portal's public base URL (for example `http://localhost/Fuzzy_Score` for local testing); notification email links are omitted when it is not a valid HTTP(S) URL.
 
 For Gmail, use `smtp.gmail.com`, port `587`, encryption `tls`, the sender Gmail address, and a Google App Password when the account supports it. Do not use the normal Gmail password.
 

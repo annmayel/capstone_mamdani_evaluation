@@ -154,6 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$fieldErrors['confirm_password'] = 'Passwords do not match.';
 		}
 
+		if (!$fieldErrors && !fuzzy_otp_mail_configured()) {
+			$errors[] = 'Email verification is not configured. Please contact the system administrator before registering.';
+		}
+
 		if (!$fieldErrors) {
 			$emailQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, email_verified_at FROM users WHERE email = ? LIMIT 1');
 			$emailQuery->execute([$email]);

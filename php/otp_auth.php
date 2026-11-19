@@ -2,34 +2,59 @@
 
 declare(strict_types=1);
 
+function fuzzy_otp_environment_value(string $name): string
+{
+	$value = getenv($name);
+	if ($value === false && isset($_SERVER[$name])) {
+		$value = (string) $_SERVER[$name];
+	}
+	if ($value === false && isset($_ENV[$name])) {
+		$value = (string) $_ENV[$name];
+	}
+
+	return $value === false ? '' : (string) $value;
+}
+
 function fuzzy_otp_mail_config(): ?array
 {
 	$mailerClass = 'PHPMailer\\PHPMailer\\PHPMailer';
 	$autoload = __DIR__ . '/vendor/autoload.php';
 	if (!is_file($autoload)) {
+		error_log('[email-otp] SMTP is unavailable: the Composer autoloader is missing.');
 		return null;
 	}
 	require_once $autoload;
+	if (!class_exists($mailerClass)) {
+		error_log('[email-otp] SMTP is unavailable: PHPMailer is missing from the Composer dependencies.');
+		return null;
+	}
 
 	$settings = [
-		'host' => getenv('FUZZY_SMTP_HOST') ?: '',
-		'username' => getenv('FUZZY_SMTP_USERNAME') ?: '',
-		'password' => getenv('FUZZY_SMTP_PASSWORD') ?: '',
-		'from_email' => getenv('FUZZY_SMTP_FROM_EMAIL') ?: '',
-		'from_name' => getenv('FUZZY_SMTP_FROM_NAME') ?: 'Fuzzy Score',
-		'port' => (int) (getenv('FUZZY_SMTP_PORT') ?: 587),
-		'encryption' => strtolower((string) (getenv('FUZZY_SMTP_ENCRYPTION') ?: 'tls')),
+		'host' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_HOST')),
+		'username' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_USERNAME')),
+		'password' => preg_replace('/\s+/', '', fuzzy_otp_environment_value('FUZZY_SMTP_PASSWORD')),
+		'from_email' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_FROM_EMAIL')),
+		'from_name' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_FROM_NAME')) ?: 'Fuzzy Score',
+		'port' => (int) (fuzzy_otp_environment_value('FUZZY_SMTP_PORT') ?: 587),
+		'encryption' => strtolower(fuzzy_otp_environment_value('FUZZY_SMTP_ENCRYPTION') ?: 'tls'),
 	];
 
-	if (
-		!class_exists($mailerClass)
-		|| $settings['host'] === ''
-		|| $settings['username'] === ''
-		|| $settings['password'] === ''
-		|| !filter_var($settings['from_email'], FILTER_VALIDATE_EMAIL)
-		|| $settings['port'] < 1
-		|| !in_array($settings['encryption'], ['tls', 'ssl'], true)
-	) {
+	$invalidSettings = [];
+	foreach ([
+		'FUZZY_SMTP_HOST' => $settings['host'] !== '',
+		'FUZZY_SMTP_USERNAME' => $settings['username'] !== '',
+		'FUZZY_SMTP_PASSWORD' => $settings['password'] !== '',
+		'FUZZY_SMTP_FROM_EMAIL' => filter_var($settings['from_email'], FILTER_VALIDATE_EMAIL) !== false,
+		'FUZZY_SMTP_PORT' => $settings['port'] > 0,
+		'FUZZY_SMTP_ENCRYPTION' => in_array($settings['encryption'], ['tls', 'ssl'], true),
+	] as $name => $isValid) {
+		if (!$isValid) {
+			$invalidSettings[] = $name;
+		}
+	}
+
+	if ($invalidSettings) {
+		error_log('[email-otp] SMTP configuration is missing or invalid: ' . implode(', ', $invalidSettings) . '.');
 		return null;
 	}
 
