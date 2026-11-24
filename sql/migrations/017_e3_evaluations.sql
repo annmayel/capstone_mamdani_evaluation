@@ -1,0 +1,52 @@
+USE `capstone_fuzzy_eval`;
+
+CREATE TABLE IF NOT EXISTS `e3_evaluations` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` INT NOT NULL,
+  `evaluator_id` INT NOT NULL,
+  `fr1_1` DECIMAL(5,2) NULL,
+  `fr1_2` DECIMAL(5,2) NULL,
+  `fr1_3` DECIMAL(5,2) NULL,
+  `fr1_4` DECIMAL(5,2) NULL,
+  `arc2_1` DECIMAL(5,2) NULL,
+  `arc2_2` DECIMAL(5,2) NULL,
+  `arc2_3` DECIMAL(5,2) NULL,
+  `dp3_1` DECIMAL(5,2) NULL,
+  `dp3_2` DECIMAL(5,2) NULL,
+  `pmd4_1` DECIMAL(5,2) NULL,
+  `pmd4_2` DECIMAL(5,2) NULL,
+  `pmd4_3` DECIMAL(5,2) NULL,
+  `total_score` DECIMAL(6,2) NOT NULL,
+  `remarks` TEXT NULL,
+  `revisions` TEXT NULL,
+  `status` ENUM('draft','submitted') NOT NULL DEFAULT 'submitted',
+  `submitted_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_e3_evaluation_project_evaluator` (`project_id`, `evaluator_id`),
+  KEY `idx_e3_evaluation_project` (`project_id`),
+  KEY `idx_e3_evaluation_evaluator` (`evaluator_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `e3_final_verdicts` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` INT NOT NULL,
+  `chairperson_id` INT NOT NULL,
+  `calculated_score` DECIMAL(6,2) NOT NULL,
+  `final_score` DECIMAL(6,2) NOT NULL,
+  `verdict_label` VARCHAR(100) NOT NULL,
+  `has_departure` TINYINT(1) NOT NULL DEFAULT 0,
+  `departure_reason` TEXT NULL,
+  `departure_authority` TEXT NULL,
+  `revisions` TEXT NULL,
+  `chairperson_comments` TEXT NULL,
+  `signature_name` VARCHAR(200) NULL,
+  `signature_title` VARCHAR(200) NULL,
+  `published_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_e3_final_project` (`project_id`),
+  KEY `idx_e3_final_chairperson` (`chairperson_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

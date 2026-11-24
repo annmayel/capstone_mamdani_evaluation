@@ -77,7 +77,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                 ?>
                   <tr data-record data-title="<?=esc($title)?>" data-search="<?=esc($title . ' ' . $group . ' ' . $adviser)?>" data-group="<?=esc($group)?>" data-adviser="<?=esc($adviser)?>" data-status="<?=esc($assignmentStatus)?>">
                     <td class="title-cell"><span class="project-title"><?=esc($title)?></span></td><td><?=esc($group ?: 'Not set')?></td><td><?=esc($adviser ?: 'Not assigned')?></td>
-                    <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span></td><td><a class="action-link" href="evaluate_paper.php?project_id=<?=esc($project['id'])?>">Evaluate paper</a></td>
+                    <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span></td><td><a class="action-link" href="evaluate_e3.php?project_id=<?=esc($project['id'])?>">Evaluate E3</a></td>
                   </tr>
                 <?php endforeach; ?>
                 <tr class="no-results-row" data-no-results hidden><td colspan="5">No assignments match these filters. Adjust or reset your filters.</td></tr>

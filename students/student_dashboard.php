@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
+require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/student_auth.php';
 $user = require_verified_student($pdo);
 $verificationSuccess = (string) ($_SESSION['verification_success'] ?? '');
@@ -115,6 +116,18 @@ $stmt = $pdo->prepare('SELECT * FROM projects WHERE student_id = ? LIMIT 1');
 $stmt->execute([$uid]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 $project = $project ?: null;
+if ($view === 'results' && $project) {
+    try {
+        $e3PublishedStmt = $pdo->prepare('SELECT published_at FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL LIMIT 1');
+        $e3PublishedStmt->execute([(int) $project['id']]);
+        if ($e3PublishedStmt->fetchColumn()) {
+            header('Location: e3_result.php');
+            exit;
+        }
+    } catch (PDOException $exception) {
+        error_log('[student dashboard] Could not verify E3 publication: ' . $exception->getMessage());
+    }
+}
 $submissions = [];
 $latestSubmission = null;
 $submissionTableAvailable = true;
