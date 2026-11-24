@@ -2,14 +2,27 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
+require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $projectId=(int)($_GET['project_id']??0);$evaluatorId=(int)$_SESSION['user']['id'];
 $projectStmt=$pdo->prepare('SELECT p.*,a.status assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id=p.id WHERE p.id=? AND a.evaluator_id=? LIMIT 1');
 $projectStmt->execute([$projectId,$evaluatorId]);$project=$projectStmt->fetch(PDO::FETCH_ASSOC);
 if(!$project){header('Location: projects.php?evaluation_error=not_assigned');exit;}
+$proposalSubmission=latest_stage_submission($pdo,$projectId,'proposal');
+$finalSubmission=latest_stage_submission($pdo,$projectId,'final');
+$finalPdf=$finalSubmission&&!empty($finalSubmission['stored_filename'])
+    ? dirname(__DIR__).DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'submissions'.DIRECTORY_SEPARATOR.$finalSubmission['stored_filename']
+    : '';
+if(!$finalSubmission||!in_array($finalSubmission['status'],['submitted','under_evaluation'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
+ header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_submitted');exit;
+}
+if($finalSubmission['status']==='submitted'){
+ $pdo->prepare("UPDATE student_submissions SET status='under_evaluation' WHERE id=? AND status='submitted'")->execute([(int)$finalSubmission['id']]);
+ $finalSubmission['status']='under_evaluation';
+}
 $criteria=e3_criteria();$errors=[];$success='';
-$existingStmt=$pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id=? AND evaluator_id=? LIMIT 1');$existingStmt->execute([$projectId,$evaluatorId]);$existing=$existingStmt->fetch(PDO::FETCH_ASSOC)?:null;
+$existingStmt=$pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');$existingStmt->execute([$projectId,$evaluatorId,(int)$finalSubmission['id']]);$existing=$existingStmt->fetch(PDO::FETCH_ASSOC)?:null;
 $form=$existing?:[];$commentValues=[];
 foreach($criteria as$code=>$criterion){$commentValues[$code]=(string)($form[$criterion['key'].'_comment']??'');}
 if($existing&&trim((string)($existing['revisions']??''))!== ''){
@@ -43,11 +56,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
      $updateValues=[$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s'),$existingId];
      $u->execute($updateValues);
     }else{
-     $i=$pdo->prepare('INSERT INTO e3_evaluations(project_id,evaluator_id,fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,total_score,remarks,revisions,status,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-     $i->execute([$projectId,$evaluatorId,$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s')]);
+     $i=$pdo->prepare('INSERT INTO e3_evaluations(project_id,evaluator_id,final_submission_id,fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,total_score,remarks,revisions,status,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+     $i->execute([$projectId,$evaluatorId,(int)$finalSubmission['id'],$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s')]);
     }
     $pdo->prepare('UPDATE evaluator_assignments SET status=? WHERE project_id=? AND evaluator_id=?')->execute(['completed',$projectId,$evaluatorId]);
-    $verdictForHistory=e3_verdict($total);
+    $verdictForHistory=e3_stage_verdict_from_score($total);
     $pdo->prepare('INSERT INTO evaluation_history(project_id,evaluator_id,evaluation_type,project_score,paper_score,overall_score,overall_rating) VALUES(?,?,?,?,?,?,?)')->execute([$projectId,$evaluatorId,'e3',$total,$total,$total,$verdictForHistory['label']]);
     $pdo->commit();$_SESSION['e3_flash']='E3 evaluation submitted. Total: '.number_format($total,2).'/100.';header('Location: evaluate_e3.php?project_id='.$projectId);exit;
    }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();error_log('[e3] '.$e->getMessage());$errors[]='The E3 evaluation could not be saved.';}
@@ -62,7 +75,10 @@ $categoryTotals=['I. Functionality and Results'=>50,'II. Academic Rigour and Con
 $categoryScores=[];$rawTotal=0;
 foreach($criteria as$criterion){$value=(float)($fieldValue($criterion['key'])!==''?$fieldValue($criterion['key']):0);$rawTotal+=is_finite($value)?$value:0;$cat=$criterion['category'];$categoryScores[$cat]=($categoryScores[$cat]??0)+$value;}
 try{$trace=build_fuzzy_trace($rawTotal,$rawTotal);}catch(Throwable$e){$trace=null;}
-$verdict=$rawTotal>0?e3_verdict($rawTotal):null;
+$currentInput=[];
+foreach($criteria as$criterion){$currentInput[$criterion['key']]=$fieldValue($criterion['key']);}
+$currentValidation=e3_validate_scores($currentInput);
+$verdict=!$currentValidation['errors']?e3_stage_verdict_from_score($rawTotal):null;
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CEIT-UR-E3 Final Hearing Evaluation</title><link rel="stylesheet" href="../assets/style.css?v=20261124"><link rel="stylesheet" href="evaluator-content.css?v=20261124"><link rel="stylesheet" href="evaluator-typography.css?v=20261124"><link rel="stylesheet" href="evaluate_selection.css?v=20261124"><link rel="stylesheet" href="evaluator-e3.css?v=20261124"></head>
 <body class="evaluator-content-page"><div class="dashboard-layout evaluator-layout">
@@ -70,7 +86,7 @@ $verdict=$rawTotal>0?e3_verdict($rawTotal):null;
 <button class="sidebar-backdrop" type="button" aria-label="Close navigation" tabindex="-1"></button>
 <main class="main-content e3-main"><div class="evaluator-topbar"><button class="mobile-menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="evaluator-sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div class="evaluator-topbar-end"><div class="account-avatar"><?=esc(strtoupper(substr($name,0,1)))?></div><span><?=esc($name)?></span></div></div>
 <a class="selection-back" href="<?=$isSummary?'evaluate_selection.php?project_id='.$projectId:'projects.php'?>">← <?=$isSummary?'Back to Evaluation Type':'Back to Assigned Projects'?></a>
-<header class="main-header e3-header"><div class="main-header-text"><span class="page-eyebrow">Final hearing · CEIT-UR-E3</span><h1><?=$isSummary?'Evaluation Summary':'Final Hearing Evaluation'?></h1><p>PART 1: GRADING RUBRIC — 100 POINTS</p></div></header>
+<header class="main-header e3-header"><div class="main-header-text"><span class="page-eyebrow">Final hearing · CEIT-UR-E3</span><h1><?=$isSummary?'Evaluation Summary':'Final Hearing Evaluation'?></h1><p>PART 1: GRADING RUBRIC — 100 POINTS · <?=esc($finalSubmission['original_filename'])?></p><a class="e3-btn secondary" href="view_submission.php?id=<?=esc($finalSubmission['id'])?>&amp;stage=final" target="_blank" rel="noopener">Open Final Paper PDF</a></div></header>
 <?php if($success):?><div class="e3-alert success"><?=esc($success)?></div><?php endif;if($errors):?><div class="e3-alert error"><strong>Please review:</strong><ul><?php foreach(array_unique($errors)as$error):?><li><?=esc($error)?></li><?php endforeach;?></ul></div><?php endif;?>
 <?php if(!$isSummary):?>
 <section class="project-info-card"><div class="project-image"><span>CAPSTONE</span></div><dl><div><dt>Program</dt><dd><?=esc($project['academic_year']?('BS Information Technology · '.$project['academic_year']):'BS Information Technology')?></dd></div><div><dt>Date and Time</dt><dd><?php if(!empty($project['defense_time'])): ?><?=esc(date('M j, Y',strtotime($project['defense_date'])) . ' · ' . $project['defense_time'])?><?php elseif(!empty($project['defense_date'])): ?><?=esc(date('M j, Y',strtotime($project['defense_date'])))?><?php else: ?>Not set<?php endif; ?></dd></div><div><dt>Thesis / Capstone Title</dt><dd><?=esc($project['title'])?></dd></div><div><dt>Proponents</dt><dd><?=esc(!empty($project['members'])?$project['members']:($project['group_name']?:'Not set'))?></dd></div><div><dt>Adviser</dt><dd><?=esc($project['adviser']?:'Not assigned')?></dd></div><div><dt>Panel Member Evaluating</dt><dd><?=esc($name)?></dd></div></dl></section>

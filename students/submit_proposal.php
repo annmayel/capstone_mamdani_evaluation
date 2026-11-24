@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/email_notifications.php';
 require_once __DIR__ . '/../php/project_links.php';
 require_once __DIR__ . '/../php/student_auth.php';
+require_once __DIR__ . '/../php/submissions.php';
 $user = require_verified_student($pdo);
 $studentId = (int) $user['id'];
 $redirect = 'student_dashboard.php?view=proposal';
@@ -21,6 +22,26 @@ if (!$projectId) {
     exit;
 }
 
+$stage = (string) ($_POST['stage'] ?? 'proposal');
+if (!in_array($stage, ['proposal', 'final'], true)) {
+    header('Location: ' . $redirect . '&error=invalid_request');
+    exit;
+}
+$projectStmt = $pdo->prepare('SELECT * FROM projects WHERE id = ? AND student_id = ? LIMIT 1');
+$projectStmt->execute([(int) $projectId, $studentId]);
+$project = $projectStmt->fetch(PDO::FETCH_ASSOC);
+$latestProposal = latest_stage_submission($pdo, (int) $projectId, 'proposal');
+$latestStageSubmission = latest_stage_submission($pdo, (int) $projectId, $stage);
+if ($stage === 'final' && !proposal_allows_final_submission($project, $latestProposal)) {
+    header('Location: ' . $redirect . '&error=final_locked');
+    exit;
+}
+if ($latestStageSubmission && !in_array($latestStageSubmission['status'], ['revision_required', 'revision_requested'], true)
+    && !empty($latestStageSubmission['stored_filename'])) {
+    header('Location: ' . $redirect . '&error=submission_locked');
+    exit;
+}
+
 $file = $_FILES['proposal'] ?? null;
 $projectTitle = trim((string) ($_POST['project_title'] ?? ''));
 $googleDriveUrl = trim((string) ($_POST['google_drive_url'] ?? ''));
@@ -29,12 +50,10 @@ $otherProjectUrl = trim((string) ($_POST['other_project_url'] ?? ''));
 $legacySubmissionUrl = trim((string) ($_POST['submission_url'] ?? ''));
 $hasUpload = $file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
 $destination = null;
-$existingTitleStmt = $pdo->prepare('SELECT title FROM projects WHERE id = ? AND student_id = ? LIMIT 1');
-$existingTitleStmt->execute([(int) $projectId, $studentId]);
-$existingProjectTitle = trim((string) $existingTitleStmt->fetchColumn());
+$existingProjectTitle = trim((string) ($project['title'] ?? ''));
 
 $resourceLinks = array_filter([$googleDriveUrl, $githubUrl, $otherProjectUrl, $legacySubmissionUrl]);
-if (!$hasUpload && !$resourceLinks) {
+if (!$hasUpload && ($stage !== 'proposal' || !empty($_POST['stage']) || !$resourceLinks)) {
     header('Location: ' . $redirect . '&error=missing_submission');
     exit;
 }
@@ -113,37 +132,50 @@ try {
     if (!in_array('google_drive_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN google_drive_url VARCHAR(1000) DEFAULT NULL AFTER description');
     if (!in_array('github_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN github_url VARCHAR(1000) DEFAULT NULL AFTER google_drive_url');
     if (!in_array('other_project_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN other_project_url VARCHAR(1000) DEFAULT NULL AFTER github_url');
-    $pdo->prepare('UPDATE projects SET title = ?, google_drive_url = ?, github_url = ?, other_project_url = ? WHERE id = ? AND student_id = ?')->execute([$projectTitle, $googleDriveUrl ?: null, $githubUrl ?: null, $otherProjectUrl ?: null, (int) $projectId, $studentId]);
-    $stmt = $pdo->prepare('INSERT INTO student_submissions (student_id, project_id, original_filename, stored_filename, submission_url, mime_type, file_size, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$studentId, (int) $projectId, $originalName, $storedName, $hasUpload ? null : ($legacySubmissionUrl ?: null), $mime, $hasUpload ? (int) $file['size'] : $fileSize, 'submitted']);
+    if ($stage === 'proposal' && array_key_exists('project_title', $_POST)) {
+        $pdo->prepare('UPDATE projects SET title = ?, google_drive_url = ?, github_url = ?, other_project_url = ? WHERE id = ? AND student_id = ?')->execute([
+            $projectTitle,
+            array_key_exists('google_drive_url', $_POST) ? ($googleDriveUrl ?: null) : ($project['google_drive_url'] ?? null),
+            array_key_exists('github_url', $_POST) ? ($githubUrl ?: null) : ($project['github_url'] ?? null),
+            array_key_exists('other_project_url', $_POST) ? ($otherProjectUrl ?: null) : ($project['other_project_url'] ?? null),
+            (int) $projectId,
+            $studentId,
+        ]);
+    }
+    $stmt = $pdo->prepare('INSERT INTO student_submissions (student_id, project_id, stage, original_filename, stored_filename, submission_url, mime_type, file_size, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$studentId, (int) $projectId, $stage, $originalName, $storedName, $hasUpload ? null : ($legacySubmissionUrl ?: null), $mime, $hasUpload ? (int) $file['size'] : $fileSize, 'submitted']);
     $submissionId = (int) $pdo->lastInsertId();
-    $pdo->prepare("UPDATE projects SET status = 'Submitted' WHERE id = ? AND student_id = ? AND status IN ('Draft', 'No proposal submitted')")->execute([(int) $projectId, $studentId]);
-    notify_user_once($pdo, $studentId, 'proposal-submitted:' . $submissionId . ':' . $studentId, 'Proposal submission recorded', 'Your proposal was submitted successfully and is now awaiting review.', 'students/student_dashboard.php?view=proposal');
+    if ($stage === 'proposal') {
+        $pdo->prepare('UPDATE projects SET proposal_revision_accepted_submission_id = NULL WHERE id = ?')->execute([(int) $projectId]);
+        $pdo->prepare("UPDATE projects SET status = 'Submitted' WHERE id = ? AND student_id = ? AND status IN ('Draft', 'No proposal submitted')")->execute([(int) $projectId, $studentId]);
+    }
+    $stageName = $stage === 'proposal' ? 'Proposal' : 'Final Paper';
+    notify_user_once($pdo, $studentId, $stage . '-submitted:' . $submissionId . ':' . $studentId, $stageName . ' submission recorded', 'Your ' . strtolower($stageName) . ' was submitted successfully and is now awaiting review.', 'students/student_dashboard.php?view=proposal');
     $studentStmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE id = ? AND role = 'student' LIMIT 1");
     $studentStmt->execute([$studentId]);
     $student = $studentStmt->fetch(PDO::FETCH_ASSOC);
     if ($student) {
         fuzzy_email_notify($pdo, [
-            'event_key' => 'submission_received:' . $submissionId . ':' . $studentId,
+            'event_key' => $stage . '_submission_received:' . $submissionId . ':' . $studentId,
             'event_type' => 'submission_received',
             'recipient_user_id' => $studentId,
             'recipient_email' => (string) $student['email'],
             'recipient_name' => (string) $student['full_name'],
             'project_id' => (int) $projectId,
             'submission_id' => $submissionId,
-            'subject' => 'Your capstone submission was received',
-            'heading' => 'Submission received',
-            'intro' => 'Your project submission was saved successfully. You will receive another notification when its review status changes.',
+            'subject' => 'Your ' . strtolower($stageName) . ' was received',
+            'heading' => $stageName . ' received',
+            'intro' => 'Your ' . strtolower($stageName) . ' was saved successfully. You will receive another notification when its review status changes.',
             'sections' => [[
                 'title' => 'Submission details',
-                'rows' => [['Submission reference', '#' . $submissionId], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Submitted at', date('M j, Y g:i A')], ['Status', 'Submitted']],
+                'rows' => [['Submission reference', '#' . $submissionId], ['Stage', $stageName], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Submitted at', date('M j, Y g:i A')], ['Status', 'Submitted']],
             ]],
             'portal_path' => '/students/student_dashboard.php?view=proposal',
         ]);
     }
     $deans = $pdo->query("SELECT id, full_name, email FROM users WHERE role = 'dean'")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($deans as $dean) {
-        notify_user_once($pdo, (int) $dean['id'], 'submission-review:' . $submissionId . ':' . (int) $dean['id'], 'New capstone submission', 'A student submitted a capstone proposal. Review it and assign an evaluator.', 'dean/dashboard.php#submissions');
+        notify_user_once($pdo, (int) $dean['id'], 'submission-review:' . $submissionId . ':' . (int) $dean['id'], 'New capstone submission', 'A student submitted a ' . strtolower($stageName) . '. Review it and assign an evaluator.', 'dean/dashboard.php#submissions');
         fuzzy_email_notify($pdo, [
             'event_key' => 'submission_for_review:' . $submissionId . ':' . (int) $dean['id'],
             'event_type' => 'submission_for_review',
@@ -152,10 +184,10 @@ try {
             'recipient_name' => (string) $dean['full_name'],
             'project_id' => (int) $projectId,
             'submission_id' => $submissionId,
-            'subject' => 'A new capstone submission is awaiting review',
-            'heading' => 'New capstone submission',
-            'intro' => 'A student submitted a capstone proposal. Review the submission and assign an evaluator.',
-            'sections' => [['title' => 'Submission details', 'rows' => [['Submission reference', '#' . $submissionId], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Status', 'Submitted']]]],
+            'subject' => 'A new ' . strtolower($stageName) . ' is awaiting review',
+            'heading' => 'New ' . strtolower($stageName),
+            'intro' => 'A student submitted a ' . strtolower($stageName) . '. Review the submission and assign an evaluator.',
+            'sections' => [['title' => 'Submission details', 'rows' => [['Submission reference', '#' . $submissionId], ['Stage', $stageName], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Status', 'Submitted']]]],
             'portal_path' => '/dean/dashboard.php#submissions',
         ]);
     }
@@ -166,5 +198,5 @@ try {
     exit;
 }
 
-header('Location: ' . $redirect . '&uploaded=1');
+header('Location: ' . $redirect . '&uploaded=' . rawurlencode($stage));
 exit;

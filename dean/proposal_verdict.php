@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/submissions.php';
 require_dean_access();
 
 $projectId = (int) ($_GET['project_id'] ?? 0);
@@ -10,13 +11,30 @@ $projectStmt = $pdo->prepare('SELECT * FROM projects WHERE id=? LIMIT 1');
 $projectStmt->execute([$projectId]);
 $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
 $errors = [];
-$success = isset($_GET['confirmed']) ? 'Official proposal verdict confirmed.' : '';
+$success = isset($_GET['confirmed']) ? 'Official proposal verdict confirmed.' : (isset($_GET['accepted']) ? 'Revised proposal accepted; the Final Paper stage is now unlocked.' : '');
 $criteria = proposal_criteria();
 $evaluations = [];
 $criterionAverages = array_fill_keys(array_keys($criteria), 0.0);
 $averageTotal = null;
 $recommendation = null;
 $published = $project && !empty($project['proposal_confirmed_at']);
+$submission = $project ? latest_stage_submission($pdo, $projectId, 'proposal') : null;
+$submissionReady = $submission && !empty($submission['stored_filename'])
+    && is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename']);
+$canConfirmRevision = $published
+    && ($project['proposal_official_verdict'] ?? '') === 'Not Approved'
+    && $submissionReady
+    && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
+    && (int) ($project['proposal_revision_accepted_submission_id'] ?? 0) !== (int) $submission['id']
+    && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
+$canAcceptRevisions = $published
+    && (
+        in_array($project['proposal_official_verdict'] ?? '', ['Approved with Minor Revision', 'Approved with Major Revision'], true)
+        || (($project['proposal_official_verdict'] ?? '') === 'Approved' && trim((string) ($project['proposal_required_revisions'] ?? '')) !== '')
+    )
+    && $submissionReady
+    && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
+    && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
 
 if ($project) {
     $scoreColumns = array_column($criteria, 'key');
@@ -27,13 +45,13 @@ if ($project) {
          INNER JOIN (
              SELECT evaluator_id, MAX(id) AS latest_id
              FROM evaluations_project
-             WHERE project_id=? AND proposal_status=\'submitted\' AND ' . $scoreConditions . '
+             WHERE project_id=? AND proposal_status=\'submitted\' AND proposal_submission_id=? AND ' . $scoreConditions . '
              GROUP BY evaluator_id
          ) latest ON latest.latest_id=e.id
          INNER JOIN users u ON u.id=e.evaluator_id
          ORDER BY u.full_name'
     );
-    $individualStmt->execute([$projectId]);
+    $individualStmt->execute([$projectId, (int) ($submission['id'] ?? 0)]);
     foreach ($individualStmt->fetchAll(PDO::FETCH_ASSOC) as $evaluation) {
         $validation = proposal_validate_scores($evaluation, true);
         if ($validation['errors']) {
@@ -56,10 +74,43 @@ if ($project) {
         $recommendation = proposal_verdict_from_score(round(($averageTotal / 120) * 100, 2));
     }
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accept_revisions') {
         if (!csrf_check($_POST['csrf'] ?? '')) {
             $errors[] = 'Your session could not be verified. Refresh the page and try again.';
-        } elseif ($published) {
+        } elseif (!$canAcceptRevisions) {
+            $errors[] = 'There is no revised proposal awaiting acceptance.';
+        } else {
+            try {
+                $pdo->beginTransaction();
+                $acceptStmt = $pdo->prepare(
+                    'UPDATE projects SET proposal_revision_accepted_submission_id=?
+                     WHERE id=? AND proposal_confirmed_at IS NOT NULL
+                       AND proposal_official_verdict IN (?,?,?)'
+                );
+                $acceptStmt->execute([
+                    (int) $submission['id'],
+                    $projectId,
+                    'Approved with Minor Revision',
+                    'Approved with Major Revision',
+                    'Approved',
+                ]);
+                if ($acceptStmt->rowCount() !== 1) {
+                    throw new RuntimeException('Proposal revisions could not be accepted.');
+                }
+                $pdo->prepare("UPDATE student_submissions SET status='accepted' WHERE id=?")->execute([(int) $submission['id']]);
+                $pdo->commit();
+                header('Location: proposal_verdict.php?project_id=' . $projectId . '&accepted=1');
+                exit;
+            } catch (Throwable $exception) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                error_log('[proposal verdict] ' . $exception->getMessage());
+                $errors[] = 'The revised proposal could not be accepted.';
+            }
+        }
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!csrf_check($_POST['csrf'] ?? '')) {
+            $errors[] = 'Your session could not be verified. Refresh the page and try again.';
+        } elseif ($published && !$canConfirmRevision) {
             $errors[] = 'The official proposal verdict has already been confirmed.';
         } elseif (!$recommendation) {
             $errors[] = 'At least one complete, submitted proposal rubric is required before confirmation.';
@@ -78,24 +129,51 @@ if ($project) {
             if (!$errors) {
                 try {
                     $pdo->beginTransaction();
-                    $confirmStmt = $pdo->prepare(
-                        'UPDATE projects
+                    if ($canConfirmRevision) {
+                        $historyStmt = $pdo->prepare(
+                            'INSERT INTO stage_verdict_history
+                             (project_id,stage,submission_id,chairperson_id,score,verdict_label,required_revisions,chairperson_comments,confirmed_at)
+                             VALUES(?,?,?,?,?,?,?,?,?)'
+                        );
+                        $historyStmt->execute([
+                            $projectId,
+                            'proposal',
+                            (int) ($project['proposal_verdict_submission_id'] ?? 0) ?: null,
+                            (int) ($project['proposal_chairperson_id'] ?? $_SESSION['user']['id']),
+                            (float) $project['proposal_official_score'],
+                            (string) $project['proposal_official_verdict'],
+                            $project['proposal_required_revisions'] ?? null,
+                            $project['proposal_chairperson_comments'] ?? null,
+                            (string) $project['proposal_confirmed_at'],
+                        ]);
+                    }
+                    $confirmSql = 'UPDATE projects
                          SET proposal_official_score=?,proposal_official_verdict=?,proposal_required_revisions=?,
-                             proposal_chairperson_comments=?,proposal_chairperson_id=?,proposal_confirmed_at=?
-                         WHERE id=? AND proposal_confirmed_at IS NULL'
-                    );
-                    $confirmStmt->execute([
+                             proposal_chairperson_comments=?,proposal_chairperson_id=?,proposal_confirmed_at=?,
+                             proposal_verdict_submission_id=?,proposal_revision_accepted_submission_id=NULL
+                         WHERE id=?';
+                    $confirmParams = [
                         $recommendation['percentage'],
                         $recommendation['label'],
                         $revisions !== '' ? $revisions : null,
                         $comments !== '' ? $comments : null,
                         (int) $_SESSION['user']['id'],
                         date('Y-m-d H:i:s'),
+                        $submission ? (int) $submission['id'] : null,
                         $projectId,
-                    ]);
+                    ];
+                    if (!$canConfirmRevision) {
+                        $confirmSql .= ' AND proposal_confirmed_at IS NULL';
+                    }
+                    $confirmStmt = $pdo->prepare($confirmSql);
+                    $confirmStmt->execute($confirmParams);
                     if ($confirmStmt->rowCount() !== 1) {
                         throw new RuntimeException('Proposal verdict was already confirmed or the project changed.');
                     }
+                    $pdo->prepare("UPDATE student_submissions SET status=? WHERE id=?")->execute([
+                        $recommendation['label'] === 'Approved' && $revisions === '' ? 'approved' : 'revision_required',
+                        $submission ? (int) $submission['id'] : 0,
+                    ]);
                     $pdo->commit();
                     header('Location: proposal_verdict.php?project_id=' . $projectId . '&confirmed=1');
                     exit;
@@ -121,10 +199,11 @@ if ($project) {
   <?php if (!$project): ?>
     <section class="proposal-review-card"><p>Project not found.</p></section>
   <?php else: ?>
+    <?php if ($submissionReady): ?><section class="proposal-review-card"><h2>Submitted Proposal Paper</h2><p><?=esc($submission['original_filename'])?> · <?=esc($submission['created_at'])?></p><a class="btn primary" href="../evaluator/view_submission.php?id=<?=esc($submission['id'])?>&amp;stage=proposal" target="_blank" rel="noopener">Open submitted PDF</a></section><?php endif; ?>
     <section class="proposal-review-card">
       <h2>Panel Score Summary</h2>
       <?php if ($evaluations): ?>
-        <div class="proposal-review-summary"><div><small>Panel Total</small><strong><?=number_format((float) $averageTotal, 2)?> / 120</strong></div><div><small>Panel Percentage</small><strong><?=number_format((float) $recommendation['percentage'], 2)?>%</strong></div><div><small>Recommended Verdict</small><strong><?=esc($recommendation['label'])?></strong><p><?=esc($recommendation['description'])?></p></div></div>
+        <div class="proposal-review-summary"><div><small>Panel Total</small><strong><?=number_format((float) $averageTotal, 2)?> / 120</strong></div><div><small>Panel Percentage</small><strong><?=number_format((float) $recommendation['percentage'], 2)?>%</strong></div><div><small>Mamdani Output</small><strong><?=number_format((float) $recommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Recommended Verdict</small><strong><?=esc($recommendation['label'])?></strong><p><?=esc($recommendation['description'])?></p></div></div>
         <div class="proposal-review-table-wrap"><table class="proposal-review-table"><thead><tr><th>Criteria</th><th>Panel Average</th><th>Maximum</th></tr></thead><tbody>
           <?php foreach ($criteria as $criterionKey => $criterion): ?><tr><td><?=esc($criterion['label'])?></td><td><?=number_format($criterionAverages[$criterionKey], 2)?></td><td><?=esc($criterion['maximum'])?></td></tr><?php endforeach; ?>
         </tbody></table></div>
@@ -144,7 +223,17 @@ if ($project) {
 
     <?php if ($published): ?>
       <section class="proposal-review-card proposal-official-result"><span>OFFICIAL PROPOSAL RESULT</span><h2><?=esc($project['proposal_official_verdict'])?></h2><p><?=number_format((float) $project['proposal_official_score'], 2)?>% · Confirmed <?=esc($project['proposal_confirmed_at'])?></p><?php if (!empty($project['proposal_required_revisions'])): ?><h3>Required Revisions</h3><p><?=nl2br(esc($project['proposal_required_revisions']))?></p><?php endif; ?><?php if (!empty($project['proposal_chairperson_comments'])): ?><h3>Chairperson Comments</h3><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p><?php endif; ?></section>
-    <?php else: ?>
+      <?php if ($canAcceptRevisions): ?>
+        <form method="post" class="proposal-review-card proposal-confirm-form">
+          <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
+          <input type="hidden" name="action" value="accept_revisions">
+          <h2>Accept Revised Proposal</h2>
+          <p>Review the newly submitted paper above, then confirm that the required proposal revisions are complete.</p>
+          <button type="submit" class="btn primary">Accept Revisions and Unlock Final Paper</button>
+        </form>
+      <?php endif; ?>
+    <?php endif; ?>
+    <?php if (!$published || $canConfirmRevision): ?>
       <form method="post" class="proposal-review-card proposal-confirm-form">
         <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
         <h2>Confirm Official Proposal Verdict</h2>

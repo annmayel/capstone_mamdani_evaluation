@@ -3,6 +3,7 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/submissions.php';
 
 final class ProposalEvaluationTest extends TestCase
 {
@@ -73,5 +74,35 @@ final class ProposalEvaluationTest extends TestCase
         foreach ($cases as [$score, $expected]) {
             self::assertSame($expected, proposal_verdict_from_score($score)['label']);
         }
+    }
+
+    public function testFinalPaperUnlockRequiresOfficialApprovalAndAcceptedRevisions(): void
+    {
+        $proposal = ['id' => 12];
+        $approved = ['proposal_confirmed_at' => '2026-11-25 10:00:00', 'proposal_official_verdict' => 'Approved'];
+        $approvedWithCorrections = [
+            'proposal_confirmed_at' => '2026-11-25 10:00:00',
+            'proposal_official_verdict' => 'Approved',
+            'proposal_required_revisions' => 'Correct the abstract.',
+        ];
+        $minorRevision = [
+            'proposal_confirmed_at' => '2026-11-25 10:00:00',
+            'proposal_official_verdict' => 'Approved with Minor Revision',
+            'proposal_revision_accepted_submission_id' => 12,
+        ];
+        $notApproved = [
+            'proposal_confirmed_at' => '2026-11-25 10:00:00',
+            'proposal_official_verdict' => 'Not Approved',
+            'proposal_revision_accepted_submission_id' => 12,
+        ];
+
+        self::assertTrue(proposal_allows_final_submission($approved, $proposal));
+        self::assertFalse(proposal_allows_final_submission($approvedWithCorrections, $proposal));
+        $approvedWithCorrections['proposal_revision_accepted_submission_id'] = 12;
+        self::assertTrue(proposal_allows_final_submission($approvedWithCorrections, $proposal));
+        self::assertTrue(proposal_allows_final_submission($minorRevision, $proposal));
+        self::assertFalse(proposal_allows_final_submission($minorRevision, ['id' => 13]));
+        self::assertFalse(proposal_allows_final_submission($notApproved, $proposal));
+        self::assertFalse(proposal_allows_final_submission([], $proposal));
     }
 }

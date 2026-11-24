@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $projectId = (int) ($_GET['project_id'] ?? 0);
@@ -8,6 +9,28 @@ $stmt = $pdo->prepare('SELECT p.*, a.status AS assignment_status FROM projects p
 $stmt->execute([$projectId, $evaluatorId]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
+$proposalSubmission = null;
+$finalSubmission = null;
+$proposalReady = false;
+$finalReady = false;
+try {
+    $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
+    $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
+    $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
+    $proposalReady = $proposalSubmission
+        && in_array($proposalSubmission['status'], ['submitted', 'under_evaluation'], true)
+        && !empty($proposalSubmission['stored_filename'])
+        && is_file($storage . $proposalSubmission['stored_filename']);
+    $finalReady = $finalSubmission
+        && in_array($finalSubmission['status'], ['submitted', 'under_evaluation'], true)
+        && !empty($finalSubmission['stored_filename'])
+        && is_file($storage . $finalSubmission['stored_filename'])
+        && proposal_allows_final_submission($project, $proposalSubmission);
+} catch (PDOException $exception) {
+    error_log('[evaluation selection] Stage submission records are unavailable: ' . $exception->getMessage());
+}
+$proposalStatusLabel = stage_submission_status_label($proposalSubmission);
+$finalStatusLabel = stage_submission_status_label($finalSubmission);
 $user = $_SESSION['user'];
 $name = trim((string) ($user['full_name'] ?? 'Evaluator'));
 $email = trim((string) ($user['email'] ?? ''));
@@ -35,16 +58,16 @@ $email = trim((string) ($user['email'] ?? ''));
     <a class="selection-back" href="projects.php">← Back to Assigned Projects</a>
     <header class="main-header selection-header"><div class="main-header-text"><span class="page-eyebrow">Evaluation workspace</span><h1>Evaluate Projects</h1><p>Select the evaluation type for <?=esc($project['title'])?>.</p></div></header>
     <section class="selection-grid" aria-label="Evaluation type">
-      <a class="selection-card" href="evaluate_project.php?project_id=<?=$projectId?>">
+      <?php if ($proposalReady): ?><a class="selection-card" href="evaluate_project.php?project_id=<?=$projectId?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon proposal-icon" aria-hidden="true"><span>▱</span></div>
-        <div class="selection-card-copy"><span class="selection-label">Proposal stage</span><h2>Proposal Evaluation</h2><p>Record the proposal verdict and comments before project development.</p></div>
-        <span class="selection-action">Start Proposal Evaluation <b>→</b></span>
-      </a>
-      <a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>">
+        <div class="selection-card-copy"><span class="selection-label">Proposal stage · <?=esc($proposalStatusLabel)?></span><h2>Proposal Evaluation</h2><p>Record the proposal verdict and comments before project development.</p></div>
+        <span class="selection-action"><?=$proposalReady ? 'Start Proposal Evaluation' : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
+      <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>
+      <?php if ($finalReady): ?><a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon hearing-icon" aria-hidden="true"><span>✓</span></div>
-        <div class="selection-card-copy"><span class="selection-label">Final hearing</span><h2>Final Hearing Evaluation</h2><p>Evaluate the capstone project using the CEIT-UR-E3 final hearing rubric.</p></div>
-        <span class="selection-action">Start Final Hearing Evaluation <b>→</b></span>
-      </a>
+        <div class="selection-card-copy"><span class="selection-label">Final hearing · <?=esc($finalStatusLabel)?></span><h2>Final Hearing Evaluation</h2><p>Evaluate the capstone project using the CEIT-UR-E3 final hearing rubric.</p></div>
+        <span class="selection-action"><?=$finalReady ? 'Start Final Hearing Evaluation' : 'Waiting for Final Paper'?> <b><?=$finalReady ? '→' : '&#128274;'?></b></span>
+      <?php if ($finalReady): ?></a><?php else: ?></article><?php endif; ?>
     </section>
   </main>
 </div>

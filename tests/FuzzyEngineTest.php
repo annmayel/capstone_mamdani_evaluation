@@ -2,6 +2,7 @@
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../php/fuzzy_engine.php';
+require_once __DIR__ . '/../php/e3.php';
 
 final class FuzzyEngineTest extends TestCase {
     public function testOfficialVerdictBoundaries(): void {
@@ -73,6 +74,22 @@ final class FuzzyEngineTest extends TestCase {
         self::assertSame(88.0, $trace['final_score']);
         self::assertSame(87.0, $trace['defuzz']);
         self::assertSame('PASSED/APPROVED (Minor Revision)', $trace['rating']);
+    }
+
+    public function testFinalHearingVerdictUsesExistingMamdaniBandsWithStageLabels(): void {
+        $cases = [
+            [97, 'Passed'],
+            [88, 'Passed with Minor Corrections'],
+            [70, 'Passed with Major Revisions'],
+            [55, 'Not Passed'],
+            [42, 'Not Passed'],
+        ];
+
+        foreach ($cases as [$score, $expected]) {
+            $result = e3_stage_verdict_from_score($score);
+            self::assertSame($expected, $result['label']);
+            self::assertSame(build_fuzzy_trace($score, $score)['defuzz'], $result['fuzzy']['defuzz']);
+        }
     }
 
     public function testVerdictMembershipsUseOnlyOfficialCEITCategories(): void {

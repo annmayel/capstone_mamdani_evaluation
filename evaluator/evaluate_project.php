@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 
@@ -12,9 +13,21 @@ $stmt->execute([$projectId, $evaluatorId]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 
+$submission = latest_stage_submission($pdo, $projectId, 'proposal');
+if (!$submission || !in_array($submission['status'], ['submitted', 'under_evaluation'], true)
+    || empty($submission['stored_filename'])
+    || !is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename'])) {
+    header('Location: evaluate_selection.php?project_id=' . $projectId . '&evaluation_error=proposal_not_submitted');
+    exit;
+}
+if ($submission['status'] === 'submitted') {
+    $pdo->prepare("UPDATE student_submissions SET status = 'under_evaluation' WHERE id = ? AND status = 'submitted'")->execute([(int) $submission['id']]);
+    $submission['status'] = 'under_evaluation';
+}
+
 $criteria = proposal_criteria();
-$latest = $pdo->prepare('SELECT * FROM evaluations_project WHERE project_id=? AND evaluator_id=? ORDER BY id DESC LIMIT 1');
-$latest->execute([$projectId, $evaluatorId]);
+$latest = $pdo->prepare('SELECT * FROM evaluations_project WHERE project_id=? AND evaluator_id=? AND proposal_submission_id=? ORDER BY id DESC LIMIT 1');
+$latest->execute([$projectId, $evaluatorId, (int) $submission['id']]);
 $existing = $latest->fetch(PDO::FETCH_ASSOC) ?: null;
 $hasRubricScores = $existing && count(array_filter(
     array_column($criteria, 'key'),
@@ -90,13 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $update = $pdo->prepare('UPDATE evaluations_project SET ' . implode(',', $set) . ' WHERE id=?');
                     $update->execute($params);
                 } else {
-                    $columns = array_merge(['project_id', 'evaluator_id'], array_keys($values), ['created_at']);
+                    $columns = array_merge(['project_id', 'evaluator_id', 'proposal_submission_id'], array_keys($values), ['created_at']);
                     $placeholders = array_fill(0, count($columns) - 1, '?');
                     $insert = $pdo->prepare(
                         'INSERT INTO evaluations_project (' . implode(',', $columns) . ') VALUES (' .
                         implode(',', $placeholders) . ',NOW())'
                     );
-                    $insert->execute(array_merge([$projectId, $evaluatorId], array_values($values)));
+                    $insert->execute(array_merge([$projectId, $evaluatorId, (int) $submission['id']], array_values($values)));
                 }
 
                 $pdo->commit();
@@ -147,7 +160,7 @@ $email = trim((string) ($_SESSION['user']['email'] ?? ''));
   <main class="main-content e3-main proposal-evaluation-main">
     <div class="evaluator-topbar"><button class="mobile-menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="evaluator-sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div class="evaluator-topbar-end"><div class="account-avatar"><?=esc(strtoupper(substr($name, 0, 1)))?></div><span><?=esc($name)?></span></div></div>
     <a class="selection-back" href="evaluate_selection.php?project_id=<?=$projectId?>">← Back to Evaluation Type</a>
-    <header class="main-header proposal-page-header"><div class="main-header-text"><span class="page-eyebrow">Proposal stage</span><h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>Proposal Evaluation</h1><p><?=esc($project['title'])?></p></div></header>
+    <header class="main-header proposal-page-header"><div class="main-header-text"><span class="page-eyebrow">Proposal stage</span><h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>Proposal Evaluation</h1><p><?=esc($project['title'])?></p><a class="e3-btn secondary" href="view_submission.php?id=<?=esc($submission['id'])?>&amp;stage=proposal" target="_blank" rel="noopener">Review submitted PDF: <?=esc($submission['original_filename'])?></a></div></header>
     <?php if ($success): ?><div class="e3-alert success" role="status"><?=esc($success)?></div><?php endif; ?>
     <?php if ($errors): ?><div class="e3-alert error" role="alert"><strong>Please review:</strong><ul><?php foreach (array_unique($errors) as $error): ?><li><?=esc($error)?></li><?php endforeach; ?></ul></div><?php endif; ?>
     <?php if ($isLocked): ?><div class="proposal-submitted-note" role="status">Your proposal evaluation has been submitted. Scores and comments are read-only while the IT Chairperson reviews the panel results.</div><?php endif; ?>

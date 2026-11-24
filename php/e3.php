@@ -64,6 +64,36 @@ function e3_verdict(float $score): array
     ];
 }
 
+function e3_stage_verdict_from_score(float $score): array
+{
+    if (!function_exists('build_fuzzy_trace')) {
+        throw new LogicException('The Mamdani fuzzy engine must be loaded before calculating a final-hearing verdict.');
+    }
+
+    $trace = build_fuzzy_trace($score, $score);
+    $label = (string) $trace['rating'];
+    if (strpos($label, 'No Revision') !== false) {
+        $stageLabel = 'Passed';
+        $description = 'The final hearing meets the required standard without corrections.';
+    } elseif (strpos($label, 'Minor Revision') !== false) {
+        $stageLabel = 'Passed with Minor Corrections';
+        $description = 'Minor corrections are required before the final paper is accepted.';
+    } elseif (strpos($label, 'Major Revision') !== false) {
+        $stageLabel = 'Passed with Major Revisions';
+        $description = 'Major revisions are required before the final paper is accepted.';
+    } else {
+        $stageLabel = 'Not Passed';
+        $description = 'The final hearing requirements have not been met.';
+    }
+
+    return [
+        'label' => $stageLabel,
+        'description' => $description,
+        'score' => round($score, 2),
+        'fuzzy' => $trace,
+    ];
+}
+
 function e3_validate_scores(array $input): array
 {
     $scores = [];
@@ -89,12 +119,19 @@ function e3_validate_scores(array $input): array
     return ['scores' => $scores, 'total' => round($total, 2), 'errors' => $errors];
 }
 
-function e3_consolidated(PDO $pdo, int $projectId): array
+function e3_consolidated(PDO $pdo, int $projectId, ?int $submissionId = null): array
 {
     $criteria = e3_criteria();
     $consolidated = [];
-    $stmt = $pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id = ? AND status = ? ORDER BY id');
-    $stmt->execute([$projectId, 'submitted']);
+    $sql = 'SELECT * FROM e3_evaluations WHERE project_id = ? AND status = ?';
+    $params = [$projectId, 'submitted'];
+    if ($submissionId !== null) {
+        $sql .= ' AND final_submission_id = ?';
+        $params[] = $submissionId;
+    }
+    $sql .= ' ORDER BY id';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $evaluations = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $evaluatorCount = count($evaluations);
     foreach ($criteria as $code => $criterion) {

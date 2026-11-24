@@ -14,4 +14,8 @@
 .selection-action { display:flex; align-items:center; justify-content:space-between; margin-top:auto; padding-top:22px; border-top:1px solid #eee8e2; color:#1d6968; font-size:12px; font-weight:700; }
 .selection-action b { font-size:20px; transition:transform .18s; }
 .selection-card:hover .selection-action b { transform:translateX(4px); }
+.selection-card.is-locked { cursor:not-allowed; opacity:.72; }
+.selection-card.is-locked:hover { transform:none; border-color:#e8dfd7; box-shadow:0 12px 30px rgba(27,49,48,.055); }
+.selection-card.is-locked .selection-action { color:#718184; }
+.selection-card.is-locked .selection-action b { font-size:14px; }
 @media(max-width:720px){.selection-grid{grid-template-columns:1fr}.selection-card{min-height:260px;padding:22px}.selection-card-icon{width:58px;height:58px;margin-bottom:24px}}
