@@ -3,18 +3,18 @@
 function e3_criteria(): array
 {
     return [
-        'FR1.1' => ['key' => 'fr1_1', 'category' => 'I. Functionality and Results', 'label' => 'Architecture and Requirements', 'maximum' => 5],
-        'FR1.2' => ['key' => 'fr1_2', 'category' => 'I. Functionality and Results', 'label' => 'Implementation', 'maximum' => 20],
-        'FR1.3' => ['key' => 'fr1_3', 'category' => 'I. Functionality and Results', 'label' => 'Testing and Objective Verification', 'maximum' => 20],
-        'FR1.4' => ['key' => 'fr1_4', 'category' => 'I. Functionality and Results', 'label' => 'Focused Verification', 'maximum' => 5],
-        'ARC2.1' => ['key' => 'arc2_1', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Background and Methodology', 'maximum' => 5],
-        'ARC2.2' => ['key' => 'arc2_2', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Data Analysis and Synthesis', 'maximum' => 10],
-        'ARC2.3' => ['key' => 'arc2_3', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Conclusion and Recommendation', 'maximum' => 5],
-        'DP3.1' => ['key' => 'dp3_1', 'category' => 'III. Defence and Presentation', 'label' => 'Presentation Quality', 'maximum' => 5],
-        'DP3.2' => ['key' => 'dp3_2', 'category' => 'III. Defence and Presentation', 'label' => 'Question and Answer, and Technical Defence', 'maximum' => 5],
-        'PMD4.1' => ['key' => 'pmd4_1', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Chapters 1 to 3', 'maximum' => 5],
-        'PMD4.2' => ['key' => 'pmd4_2', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Chapters 4 and 5', 'maximum' => 10],
-        'PMD4.3' => ['key' => 'pmd4_3', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Formatting, Appendices and Forms', 'maximum' => 5],
+        'FR1.1' => ['key' => 'fr1_1', 'category' => 'I. Functionality and Results', 'label' => 'Architecture and Requirements', 'description' => 'System architecture aligns with requirements and defined objectives.', 'maximum' => 5],
+        'FR1.2' => ['key' => 'fr1_2', 'category' => 'I. Functionality and Results', 'label' => 'Implementation', 'description' => 'Core functions are complete, accurate, and reliably implemented.', 'maximum' => 20],
+        'FR1.3' => ['key' => 'fr1_3', 'category' => 'I. Functionality and Results', 'label' => 'Testing and Objective Verification', 'description' => 'Tests demonstrate that objectives and system requirements are met.', 'maximum' => 20],
+        'FR1.4' => ['key' => 'fr1_4', 'category' => 'I. Functionality and Results', 'label' => 'Focused Verification', 'description' => 'Critical features and edge cases receive focused verification.', 'maximum' => 5],
+        'ARC2.1' => ['key' => 'arc2_1', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Background and Methodology', 'description' => 'Background, research basis, and methodology are rigorous and coherent.', 'maximum' => 5],
+        'ARC2.2' => ['key' => 'arc2_2', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Data Analysis and Synthesis', 'description' => 'Results are analyzed and synthesized using appropriate evidence.', 'maximum' => 10],
+        'ARC2.3' => ['key' => 'arc2_3', 'category' => 'II. Academic Rigour and Conclusion', 'label' => 'Conclusion and Recommendation', 'description' => 'Conclusions are supported and recommendations are actionable.', 'maximum' => 5],
+        'DP3.1' => ['key' => 'dp3_1', 'category' => 'III. Defence and Presentation', 'label' => 'Presentation Quality', 'description' => 'Presentation is organized, clear, professional, and evidence-based.', 'maximum' => 5],
+        'DP3.2' => ['key' => 'dp3_2', 'category' => 'III. Defence and Presentation', 'label' => 'Question and Answer, and Technical Defence', 'description' => 'Responses demonstrate mastery of the system and technical decisions.', 'maximum' => 5],
+        'PMD4.1' => ['key' => 'pmd4_1', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Chapters 1 to 3', 'description' => 'Introduction, review, and methodology are complete and consistent.', 'maximum' => 5],
+        'PMD4.2' => ['key' => 'pmd4_2', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Chapters 4 and 5', 'description' => 'Results, findings, conclusions, and recommendations are well documented.', 'maximum' => 10],
+        'PMD4.3' => ['key' => 'pmd4_3', 'category' => 'IV. Printed Manuscript and Documentation Quality', 'label' => 'Formatting, Appendices and Forms', 'description' => 'Document formatting, appendices, citations, and forms follow standards.', 'maximum' => 5],
     ];
 }
 

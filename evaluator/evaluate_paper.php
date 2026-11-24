@@ -1,4 +1,4 @@
 <?php
 $projectId = (int) ($_GET['project_id'] ?? 0);
-header('Location: evaluate_e3.php' . ($projectId > 0 ? '?project_id=' . $projectId : ''));
+header('Location: ' . ($projectId > 0 ? 'evaluate_selection.php?project_id=' . $projectId : 'projects.php'));
 exit;
