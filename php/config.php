@@ -253,6 +253,15 @@ try {
         error_log('[SCHEMA MIGRATION ERROR] ' . $schemaError->getMessage());
     }
 
+    try {
+        require_once __DIR__ . '/stage_submission_migration.php';
+        ensure_stage_submission_schema($pdo);
+    } catch (Throwable $schemaError) {
+        error_log('[STAGE SUBMISSION SCHEMA ERROR] ' . $schemaError->getMessage());
+        http_response_code(503);
+        exit('The paper submission database update could not be completed. Please contact the system administrator.');
+    }
+
 } catch (PDOException $e) {
 
     error_log('[DATABASE ERROR] ' . $e->getMessage());
