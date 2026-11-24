@@ -1,0 +1,43 @@
+.proposal-verdict-page{min-height:100vh;background:#f6f7f5;color:#233f40}
+.proposal-verdict-shell{width:min(1120px,calc(100% - 36px));margin:28px auto 50px}
+.proposal-review-back{display:inline-block;margin-bottom:14px;color:#216d69;font-size:12px;font-weight:700;text-decoration:none}
+.proposal-verdict-shell>header{margin-bottom:18px;padding:20px 22px;border:1px solid #e6e9e5;border-radius:10px;background:#fff}
+.proposal-verdict-shell>header span{color:#64807e;font-size:10px;font-weight:800;letter-spacing:1px}
+.proposal-verdict-shell>header h1{margin:8px 0 4px;color:#193e42;font-size:24px}
+.proposal-verdict-shell>header p{margin:0;color:#627778;font-size:13px}
+.proposal-review-notice{margin:0 0 14px;padding:11px 14px;border-radius:8px;font-size:12px}
+.proposal-review-notice.success{border:1px solid #bcdcca;background:#eef8f2;color:#2c6b48}
+.proposal-review-notice.error{border:1px solid #e1c1b8;background:#fff4ef;color:#884936}
+.proposal-review-notice ul{margin:6px 0 0;padding-left:18px}
+.proposal-review-card{margin-bottom:14px;padding:18px;border:1px solid #e5e9e6;border-radius:10px;background:#fff;box-shadow:0 6px 20px rgba(27,49,48,.04)}
+.proposal-review-card h2{margin:0 0 12px;color:#233f40;font-size:15px}
+.proposal-review-card h2 small{color:#718383;font-size:11px;font-weight:500}
+.proposal-review-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.proposal-review-summary>div{padding:13px;border-radius:8px;background:#eff6f4}
+.proposal-review-summary small{display:block;color:#637c7c;font-size:9px;font-weight:800;text-transform:uppercase}
+.proposal-review-summary strong{display:block;margin-top:6px;color:#1c6864;font-size:15px}
+.proposal-review-summary p{margin:5px 0 0;color:#677b7b;font-size:10px}
+.proposal-review-table-wrap{overflow-x:auto;margin-top:14px}
+.proposal-review-table{width:100%;border-collapse:collapse;font-size:11px}
+.proposal-review-table th,.proposal-review-table td{padding:9px 10px;border-bottom:1px solid #edf0ed;text-align:left}
+.proposal-review-table th{background:#e8f3f0;color:#345756;font-size:10px}
+.proposal-review-empty{color:#718383;font-size:12px}
+.proposal-review-computed{margin:-4px 0 12px;color:#657979;font-size:11px}
+.proposal-review-computed strong{color:#1f6b66}
+.proposal-review-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.proposal-review-detail-grid article{padding:10px;border:1px solid #e9eeeb;border-radius:7px}
+.proposal-review-detail-grid article>strong{display:flex;justify-content:space-between;gap:8px;color:#294746;font-size:10px}
+.proposal-review-detail-grid article>strong span{white-space:nowrap;color:#1c6b67}
+.proposal-review-detail-grid article p,.proposal-review-overall p{margin:6px 0 0;color:#687b7b;font-size:10px;line-height:1.55}
+.proposal-review-overall{margin-top:12px;padding:11px;border-radius:7px;background:#f7f9f8}
+.proposal-review-overall>strong,.proposal-confirm-form label span{color:#536e6c;font-size:10px;font-weight:800}
+.proposal-official-result{border-left:4px solid #48a17a;background:#f3faf6}
+.proposal-official-result>span{color:#597c71;font-size:9px;font-weight:800;letter-spacing:.8px}
+.proposal-official-result h2{margin:7px 0;color:#245942;font-size:18px}
+.proposal-official-result p{color:#607673;font-size:11px;line-height:1.55}
+.proposal-official-result h3{margin:14px 0 0;font-size:11px}
+.proposal-confirm-form>p{margin:-5px 0 14px;color:#6b7d7d;font-size:11px;line-height:1.5}
+.proposal-confirm-form label{display:grid;gap:6px;margin:12px 0}
+.proposal-confirm-form textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #d9e2df;border-radius:7px;color:#234143;font:inherit;font-size:12px;line-height:1.5;resize:vertical}
+.proposal-confirm-form button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:680px){.proposal-verdict-shell{width:calc(100% - 24px);margin-top:14px}.proposal-review-card{padding:14px}.proposal-review-summary{grid-template-columns:1fr}.proposal-review-detail-grid{grid-template-columns:1fr}.proposal-verdict-shell>header h1{font-size:21px}}

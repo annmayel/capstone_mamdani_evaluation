@@ -68,6 +68,7 @@ try {
             <div class="submission-actions">
               <?php if ($submission['submission_url']): ?><a class="btn ghost" target="_blank" rel="noopener" href="<?=esc($submission['submission_url'])?>">Open Link</a><?php elseif ($submission['submission_id']): ?><button class="btn ghost" type="button" data-preview-submission="<?=esc($submission['submission_id'])?>">View PDF</button><?php endif; ?>
               <a class="btn primary" href="assign_evaluators.php?project_id=<?=esc($submission['project_id'])?>">Assign</a>
+              <a class="btn ghost" href="proposal_verdict.php?project_id=<?=esc($submission['project_id'])?>">Review Proposal</a>
             </main>
           </td>
         </tr>

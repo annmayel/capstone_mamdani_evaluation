@@ -134,6 +134,21 @@ CREATE TABLE `evaluations_project` (
   `completeness` decimal(5,2) DEFAULT NULL,
   `total_score` decimal(6,2) DEFAULT 0.00,
   `remarks` text DEFAULT NULL,
+  `proposal_status` enum('draft','submitted') NOT NULL DEFAULT 'draft',
+  `proposal_background` decimal(5,2) DEFAULT NULL,
+  `proposal_literature` decimal(5,2) DEFAULT NULL,
+  `proposal_methodology` decimal(5,2) DEFAULT NULL,
+  `proposal_design` decimal(5,2) DEFAULT NULL,
+  `proposal_presentation` decimal(5,2) DEFAULT NULL,
+  `proposal_question_answer` decimal(5,2) DEFAULT NULL,
+  `proposal_background_comment` text DEFAULT NULL,
+  `proposal_literature_comment` text DEFAULT NULL,
+  `proposal_methodology_comment` text DEFAULT NULL,
+  `proposal_design_comment` text DEFAULT NULL,
+  `proposal_presentation_comment` text DEFAULT NULL,
+  `proposal_question_answer_comment` text DEFAULT NULL,
+  `proposal_total_score` decimal(6,2) DEFAULT NULL,
+  `proposal_evaluator_comments` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
