@@ -1,5 +1,16 @@
 <?php
 
+if (isset($pdo) && $pdo instanceof PDO) {
+    try {
+        require_once __DIR__ . '/stage_submission_migration.php';
+        ensure_stage_submission_schema($pdo);
+    } catch (Throwable $schemaError) {
+        error_log('[STAGE SUBMISSION SCHEMA ERROR] ' . $schemaError->getMessage());
+        http_response_code(503);
+        exit('The paper submission database update could not be completed. Please contact the system administrator.');
+    }
+}
+
 function latest_stage_submission(PDO $pdo, int $projectId, string $stage): ?array
 {
     if (!in_array($stage, ['proposal', 'final'], true)) {
