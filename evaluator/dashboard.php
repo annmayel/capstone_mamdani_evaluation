@@ -62,11 +62,7 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
 <li class="nav-section-label">EVALUATION</li>
 <li><a href="projects.php" class="">
 <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h4l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-9zM3.5 9.5h17"/></svg></span>
-<span class="nav-label">Evaluate Projects</span>
-</a></li>
-<li><a href="papers.php" class="">
-<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5h8l4 4V18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5.5a2 2 0 0 1 2-2zM15 3.5v4h4M8 11h8M8 15h8"/></svg></span>
-<span class="nav-label">Evaluate Papers</span>
+<span class="nav-label">Evaluation Workspace</span>
 </a></li>
 <li><a href="evaluation_history.php" class="">
 <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v5l3 2M16 2.5v3M8 2.5v3M4 9.5h3M17 9.5h3M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19z"/></svg></span>

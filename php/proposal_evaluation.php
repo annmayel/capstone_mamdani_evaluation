@@ -3,147 +3,50 @@
 function proposal_criteria(): array
 {
     return [
-        'background' => [
-            'key' => 'proposal_background',
-            'comment_key' => 'proposal_background_comment',
-            'label' => 'Project Background',
-            'description' => 'Clarity of the problem, objectives, and significance of the study.',
-            'maximum' => 20,
-            'icon' => '<path d="M9 18h6M10 22h4M8 14c-1.2-1-2-2.5-2-4a6 6 0 1 1 12 0c0 1.5-.8 3-2 4l-1 2H9l-1-2Z"/><path d="M12 2v2"/>',
-        ],
-        'literature' => [
-            'key' => 'proposal_literature',
-            'comment_key' => 'proposal_literature_comment',
-            'label' => 'Related Literature',
-            'description' => 'Relevance of current literature and clarity of the research gap.',
-            'maximum' => 20,
-            'icon' => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h7"/>',
-        ],
-        'methodology' => [
-            'key' => 'proposal_methodology',
-            'comment_key' => 'proposal_methodology_comment',
-            'label' => 'Methodology',
-            'description' => 'Appropriateness of the research methods and development plan.',
-            'maximum' => 20,
-            'icon' => '<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.7-1.4-2.4L7.3 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.7-1L11 7.4h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.7 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2Z"/>',
-        ],
-        'design' => [
-            'key' => 'proposal_design',
-            'comment_key' => 'proposal_design_comment',
-            'label' => 'System Design',
-            'description' => 'Feasibility and completeness of the proposed system design.',
-            'maximum' => 20,
-            'icon' => '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 8h10M7 12h6"/>',
-        ],
-        'presentation' => [
-            'key' => 'proposal_presentation',
-            'comment_key' => 'proposal_presentation_comment',
-            'label' => 'Presentation',
-            'description' => 'Clarity, organization, and effectiveness of the presentation.',
-            'maximum' => 20,
-            'icon' => '<path d="M3 3h18v13H3z"/><path d="m7 12 3-3 2 2 4-5M8 21l4-5 4 5"/>',
-        ],
-        'question_answer' => [
-            'key' => 'proposal_question_answer',
-            'comment_key' => 'proposal_question_answer_comment',
-            'label' => 'Question and Answer',
-            'description' => 'Depth of knowledge and ability to defend the proposal.',
-            'maximum' => 20,
-            'icon' => '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>',
-        ],
+        'PFO1.1' => ['key'=>'pfo1_1','comment_key'=>'pfo1_1_comment','chapter'=>'Chapter 1: Problem Formulation and Objectives','label'=>'Introduction and Project Context','description'=>'Clearly defines the industry/sector overview and establishes a valid, real-world problem with properly cited current pain points.','maximum'=>10],
+        'PFO1.2' => ['key'=>'pfo1_2','comment_key'=>'pfo1_2_comment','chapter'=>'Chapter 1: Problem Formulation and Objectives','label'=>'Objectives','description'=>'General and Specific Objectives are measurable, achievable, and logically mapped to the development phases.','maximum'=>10],
+        'PFO1.3' => ['key'=>'pfo1_3','comment_key'=>'pfo1_3_comment','chapter'=>'Chapter 1: Problem Formulation and Objectives','label'=>'Scope and Significance','description'=>'Boundaries and constraints are clearly set. Beneficiaries are well-identified and mapped to a specific SDG or University Research Agenda.','maximum'=>10],
+        'LTS2.1' => ['key'=>'lts2_1','comment_key'=>'lts2_1_comment','chapter'=>'Chapter 2: Literature and Theoretical Soundness','label'=>'RRL and RRS','description'=>'Academic literature and existing systems are highly relevant, current (last 5 years), and comprehensively analyzed.','maximum'=>10],
+        'LTS2.2' => ['key'=>'lts2_2','comment_key'=>'lts2_2_comment','chapter'=>'Chapter 2: Literature and Theoretical Soundness','label'=>'Synthesis and Research Gap','description'=>'The proponents successfully synthesized the reviews and explicitly proved a valid Research Gap that their project will address.','maximum'=>5],
+        'LTS2.3' => ['key'=>'lts2_3','comment_key'=>'lts2_3_comment','chapter'=>'Chapter 2: Literature and Theoretical Soundness','label'=>'Theoretical/Conceptual and Technical Background','description'=>'Methodological soundness is proven via a clear IPO diagram, established scientific theories, and a solid understanding of the chosen modern components/technologies.','maximum'=>5],
+        'MSA3.1' => ['key'=>'msa3_1','comment_key'=>'msa3_1_comment','chapter'=>'Chapter 3: Methodology and System Architecture','label'=>'Research Design and Development Phases','description'=>'Appropriate research approach (e.g., SDLC for IT, Experimental/Engineering Design for BSCpE/BSEE) is justified and detailed step-by-step.','maximum'=>10],
+        'MSA3.2' => ['key'=>'msa3_2','comment_key'=>'msa3_2_comment','chapter'=>'Chapter 3: Methodology and System Architecture','label'=>'Technical Description and Architecture','description'=>'Visual blueprints (ERDs, Schematics, AI models, UI/UX wireframes, etc.) are logically sound. Hardware/Software requirements are fully itemized.','maximum'=>20],
+        'MSA3.3' => ['key'=>'msa3_3','comment_key'=>'msa3_3_comment','chapter'=>'Chapter 3: Methodology and System Architecture','label'=>'Requirements and Mathematics/Statistics','description'=>'Functional and Non-Functional Requirements are distinct and clear. The mathematical foundation (load computations/algorithms) and Statistical Treatment for future testing are correct.','maximum'=>10],
+        'PPR4.1' => ['key'=>'ppr4_1','comment_key'=>'ppr4_1_comment','chapter'=>'Chapter 4: Oral Presentation and Proposal Readiness','label'=>'Defense and Justification','description'=>"Ability to confidently answer the panel's technical queries and successfully justify their chosen architecture and methodology.",'maximum'=>5],
+        'PPR4.2' => ['key'=>'ppr4_2','comment_key'=>'ppr4_2_comment','chapter'=>'Chapter 4: Oral Presentation and Proposal Readiness','label'=>'Delivery, Mastery, and Manuscript Compliance','description'=>'Proponents demonstrated professional oral delivery and a deep understanding of the proposed solution and the printed manuscript strictly adheres to IEEE formatting, grammatical standards, academic integrity checks, and includes all required CEIT forms and appendices.','maximum'=>5],
     ];
 }
 
 function proposal_validate_scores(array $input, bool $requireComplete = true): array
 {
-    $scores = [];
-    $errors = [];
-
-    foreach (proposal_criteria() as $criterionKey => $criterion) {
-        $key = $criterion['key'];
-        $raw = trim((string) ($input[$key] ?? ''));
-        if ($raw === '') {
-            if ($requireComplete) {
-                $errors[] = $criterion['label'] . ' score is required.';
-            } else {
-                $scores[$key] = null;
-            }
-            continue;
-        }
-        if (!preg_match('/^(?:\d+(?:\.\d{1,2})?)$/', $raw)) {
-            $errors[] = $criterion['label'] . ' score must be a non-negative number with up to two decimal places.';
-            continue;
-        }
-        $value = (float) $raw;
-        if (!is_finite($value) || $value > (float) $criterion['maximum']) {
-            $errors[] = $criterion['label'] . ' score must be between 0 and ' . $criterion['maximum'] . '.';
-            continue;
-        }
-        $scores[$key] = round($value, 2);
+    $scores=[]; $errors=[];
+    foreach (proposal_criteria() as $criterion) {
+        $key=$criterion['key']; $raw=trim((string)($input[$key]??''));
+        if ($raw==='') { if ($requireComplete) $errors[]=$criterion['label'].' score is required.'; else $scores[$key]=null; continue; }
+        if (!preg_match('/^(?:\d+(?:\.\d{1,2})?)$/',$raw)) { $errors[]=$criterion['label'].' score must be a non-negative number with up to two decimal places.'; continue; }
+        $value=(float)$raw;
+        if (!is_finite($value)||$value>(float)$criterion['maximum']) { $errors[]=$criterion['label'].' score must be between 0 and '.$criterion['maximum'].'.'; continue; }
+        $scores[$key]=round($value,2);
     }
-
-    $scoredCount = count(array_filter($scores, static fn($score) => $score !== null));
-    $total = round(array_sum(array_map(static fn($score) => (float) ($score ?? 0), $scores)), 2);
-    return [
-        'scores' => $scores,
-        'total' => $total,
-        'percentage' => round(($total / 120) * 100, 2),
-        'complete' => $scoredCount === count(proposal_criteria()),
-        'errors' => $errors,
-    ];
+    $total=round(array_sum(array_map(static fn($score)=>(float)($score??0),$scores)),2);
+    return ['scores'=>$scores,'total'=>$total,'percentage'=>$total,'complete'=>count(array_filter($scores,static fn($score)=>$score!==null))===count(proposal_criteria()),'errors'=>$errors];
 }
 
-function proposal_verdict_bands(): array
+function proposal_consolidated(PDO $pdo,int $projectId,int $submissionId): array
 {
-    $bands = [];
-    foreach (official_verdict_definitions() as $definition) {
-        $rating = (string) $definition['label'];
-        if (strpos($rating, 'No Revision') !== false) {
-            $label = 'Approved';
-        } elseif (strpos($rating, 'Minor Revision') !== false) {
-            $label = 'Approved with Minor Revision';
-        } elseif (strpos($rating, 'Major Revision') !== false) {
-            $label = 'Approved with Major Revision';
-        } else {
-            $label = 'Not Approved';
-        }
-        if (!isset($bands[$label])) {
-            $bands[$label] = [
-                'label' => $label,
-                'minimum' => (int) $definition['minimum'],
-                'maximum' => (int) $definition['maximum'],
-            ];
-        } else {
-            $bands[$label]['minimum'] = min($bands[$label]['minimum'], (int) $definition['minimum']);
-            $bands[$label]['maximum'] = max($bands[$label]['maximum'], (int) $definition['maximum']);
-        }
-    }
-    return array_values($bands);
+    $criteria=proposal_criteria(); $columns=array_column($criteria,'key');
+    $sql='SELECT * FROM proposal_evaluations WHERE project_id=? AND proposal_submission_id=? AND status=? AND '.implode(' AND ',array_map(static fn($column)=>$column.' IS NOT NULL',$columns)).' ORDER BY id';
+    $stmt=$pdo->prepare($sql); $stmt->execute([$projectId,$submissionId,'submitted']); $evaluations=$stmt->fetchAll(PDO::FETCH_ASSOC);
+    $averages=array_fill_keys(array_keys($criteria),null);
+    if ($evaluations) foreach ($criteria as $code=>$criterion) $averages[$code]=round(array_sum(array_map(static fn($row)=>(float)$row[$criterion['key']],$evaluations))/count($evaluations),2);
+    $score=$evaluations?round(array_sum($averages),2):null;
+    return ['evaluations'=>$evaluations,'criteria'=>$averages,'calculated_score'=>$score,'evaluator_count'=>count($evaluations),'recommendation'=>$score===null?null:proposal_verdict_from_score($score)];
 }
 
-function proposal_verdict_from_score(float $percentage): array
+function proposal_verdict_bands(): array { return official_verdict_definitions(); }
+
+function proposal_verdict_from_score(float $score): array
 {
-    $trace = build_fuzzy_trace($percentage, $percentage);
-    $rating = (string) $trace['rating'];
-
-    if (strpos($rating, 'No Revision') !== false) {
-        $label = 'Approved';
-        $description = 'The proposal meets the required standard and may proceed.';
-    } elseif (strpos($rating, 'Minor Revision') !== false) {
-        $label = 'Approved with Minor Revision';
-        $description = 'Small corrections are required before proceeding.';
-    } elseif (strpos($rating, 'Major Revision') !== false) {
-        $label = 'Approved with Major Revision';
-        $description = 'Significant revisions are required before proceeding.';
-    } else {
-        $label = 'Not Approved';
-        $description = 'The proposal requires further work and re-evaluation.';
-    }
-
-    return [
-        'label' => $label,
-        'description' => $description,
-        'percentage' => round($percentage, 2),
-        'fuzzy' => $trace,
-    ];
+    $trace=build_fuzzy_trace($score,$score); $verdict=$trace['verdict'];
+    return ['label'=>$verdict['label'],'description'=>$verdict['description'].' '.$verdict['next_step'],'percentage'=>round($score,2),'fuzzy'=>$trace];
 }

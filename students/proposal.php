@@ -38,42 +38,12 @@ if ($project) {
         error_log('[student submissions] Stage submission records are unavailable: ' . $exception->getMessage());
     }
 
-    if ($proposalSubmission) {
-        $proposalEvaluationSubmissionId = (int) $proposalSubmission['id'];
-        $scoreColumns = array_column($proposalCriteria, 'key');
-        $conditions = implode(' AND ', array_map(static fn($column) => 'e.' . $column . ' IS NOT NULL', $scoreColumns));
-        $evaluationStmt = $pdo->prepare(
-            'SELECT e.* FROM evaluations_project e
-             INNER JOIN (
-               SELECT evaluator_id, MAX(id) AS latest_id
-               FROM evaluations_project
-               WHERE project_id = ? AND proposal_submission_id = ? AND proposal_status = \'submitted\' AND ' .
-               implode(' AND ', array_map(static fn($column) => $column . ' IS NOT NULL', $scoreColumns)) . '
-               GROUP BY evaluator_id
-             ) latest ON latest.latest_id = e.id
-             ORDER BY e.id'
-        );
-        $evaluationStmt->execute([(int) $project['id'], $proposalEvaluationSubmissionId]);
-        $proposalEvaluations = $evaluationStmt->fetchAll(PDO::FETCH_ASSOC);
-        $officialProposalSubmissionId = (int) ($project['proposal_verdict_submission_id'] ?? 0);
-        if (!$proposalEvaluations && $officialProposalSubmissionId > 0 && $officialProposalSubmissionId !== $proposalEvaluationSubmissionId) {
-            $evaluationStmt->execute([(int) $project['id'], $officialProposalSubmissionId]);
-            $proposalEvaluations = $evaluationStmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-        if ($proposalEvaluations) {
-            $criterionTotals = array_fill_keys(array_keys($proposalCriteria), 0.0);
-            foreach ($proposalEvaluations as $evaluation) {
-                foreach ($proposalCriteria as $criterionKey => $criterion) {
-                    $criterionTotals[$criterionKey] += (float) $evaluation[$criterion['key']];
-                }
-            }
-            foreach ($criterionTotals as $criterionKey => $sum) {
-                $criterionTotals[$criterionKey] = round($sum / count($proposalEvaluations), 2);
-            }
-            $proposalPanelTotal = round(array_sum($criterionTotals), 2);
-            $proposalPercentage = round($proposalPanelTotal / 120 * 100, 2);
-            $proposalRecommendation = proposal_verdict_from_score($proposalPercentage);
-        }
+    if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false) {
+        $consolidated = proposal_consolidated($pdo, (int) $project['id'], (int) $proposalSubmission['id']);
+        $proposalEvaluations = $consolidated['evaluations'];
+        $proposalPanelTotal = $consolidated['calculated_score'];
+        $proposalPercentage = $consolidated['calculated_score'];
+        $proposalRecommendation = $consolidated['recommendation'];
     }
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
@@ -220,22 +190,17 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
           <section class="portal-panel proposal-student-result">
             <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION RESULTS</span><h3>Proposal Evaluation Results</h3></div><strong class="panel-score"><?=$proposalPercentage === null ? 'Pending' : number_format($proposalPercentage, 2) . '%'?></strong></div>
             <?php if ($proposalPercentage === null): ?>
-              <div class="empty-state">Proposal results will appear after evaluator scoring is submitted.</div>
+              <div class="empty-state">Proposal results will appear after the IT Chairperson publishes the official decision.</div>
             <?php else: ?>
               <div class="detail-grid">
-                <div><small>Total score</small><strong><?=number_format($proposalPanelTotal, 2)?> / 120</strong></div>
-                <div><small>Percentage</small><strong><?=number_format($proposalPercentage, 2)?>%</strong></div>
-                <div><small>Recommended verdict</small><strong><?=esc($proposalRecommendation['label'])?></strong></div>
-                <div><small>Chairperson confirmation</small><strong><?=!empty($project['proposal_confirmed_at']) ? 'Confirmed' : 'Pending'?></strong></div>
+                <div><small>Consolidated score</small><strong><?=number_format($proposalPanelTotal, 2)?> / 100</strong></div>
+                <div><small>Fuzzy linguistic rating</small><strong><?=esc($proposalRecommendation['fuzzy']['rating'])?></strong></div>
+                <div><small>Defuzzified output</small><strong><?=number_format((float) $proposalRecommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div>
+                <div><small>Official verdict</small><strong><?=esc($project['proposal_official_verdict'])?></strong></div>
               </div>
-              <?php if (!empty($project['proposal_confirmed_at'])): ?><div class="proposal-student-revisions"><strong>Official verdict: <?=esc($project['proposal_official_verdict'])?></strong><p>Confirmed <?=esc($formatDate($project['proposal_confirmed_at']))?></p></div><?php else: ?><div class="proposal-student-revisions"><strong>Official verdict pending Chairperson confirmation</strong></div><?php endif; ?>
-              <?php foreach ($proposalCriteria as $criterion): ?>
-                <?php $feedback = array_filter(array_map(static fn($evaluation) => trim((string) ($evaluation[$criterion['comment_key']] ?? '')), $proposalEvaluations)); ?>
-                <?php if ($feedback): ?><article class="proposal-student-criterion"><div><strong><?=esc($criterion['label'])?></strong></div><?php foreach ($feedback as $comment): ?><p><?=nl2br(esc($comment))?></p><?php endforeach; ?></article><?php endif; ?>
-              <?php endforeach; ?>
-              <?php foreach ($proposalEvaluations as $evaluation): if (trim((string) ($evaluation['proposal_evaluator_comments'] ?? '')) !== ''): ?><div class="proposal-student-revisions"><strong>Evaluator feedback</strong><p><?=nl2br(esc($evaluation['proposal_evaluator_comments']))?></p></div><?php endif; endforeach; ?>
+              <div class="proposal-student-revisions"><strong>Official verdict: <?=esc($project['proposal_official_verdict'])?></strong><p>Published <?=esc($formatDate($project['proposal_confirmed_at']))?></p></div>
               <?php if (!empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
-              <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Required revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+              <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
             <?php endif; ?>
           </section>
 

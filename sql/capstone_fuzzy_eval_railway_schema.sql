@@ -164,7 +164,7 @@ CREATE TABLE `evaluation_history` (
   `id` int(11) NOT NULL,
   `project_id` int(11) NOT NULL,
   `evaluator_id` int(11) NOT NULL,
-  `evaluation_type` enum('project','paper','overall') NOT NULL,
+  `evaluation_type` enum('project','paper','overall','e3') NOT NULL,
   `project_score` decimal(6,2) DEFAULT 0.00,
   `paper_score` decimal(6,2) DEFAULT 0.00,
   `overall_score` decimal(6,2) DEFAULT 0.00,
@@ -544,3 +544,22 @@ COMMIT;
 
 
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- CEIT-T07A proposal-hearing evaluator sheets (migration 021).
+CREATE TABLE IF NOT EXISTS `proposal_evaluations` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` INT NOT NULL, `proposal_submission_id` INT NOT NULL, `evaluator_id` INT NOT NULL,
+  `pfo1_1` DECIMAL(5,2) NULL, `pfo1_2` DECIMAL(5,2) NULL, `pfo1_3` DECIMAL(5,2) NULL,
+  `lts2_1` DECIMAL(5,2) NULL, `lts2_2` DECIMAL(5,2) NULL, `lts2_3` DECIMAL(5,2) NULL,
+  `msa3_1` DECIMAL(5,2) NULL, `msa3_2` DECIMAL(5,2) NULL, `msa3_3` DECIMAL(5,2) NULL,
+  `ppr4_1` DECIMAL(5,2) NULL, `ppr4_2` DECIMAL(5,2) NULL,
+  `pfo1_1_comment` TEXT NULL, `pfo1_2_comment` TEXT NULL, `pfo1_3_comment` TEXT NULL,
+  `lts2_1_comment` TEXT NULL, `lts2_2_comment` TEXT NULL, `lts2_3_comment` TEXT NULL,
+  `msa3_1_comment` TEXT NULL, `msa3_2_comment` TEXT NULL, `msa3_3_comment` TEXT NULL,
+  `ppr4_1_comment` TEXT NULL, `ppr4_2_comment` TEXT NULL,
+  `total_score` DECIMAL(6,2) NULL, `overall_comments` TEXT NULL, `recommendations` TEXT NULL, `required_revisions` TEXT NULL,
+  `status` ENUM('draft','submitted') NOT NULL DEFAULT 'draft', `submitted_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), UNIQUE KEY `uniq_proposal_evaluation_submission_evaluator` (`project_id`,`proposal_submission_id`,`evaluator_id`),
+  KEY `idx_proposal_evaluation_submission` (`proposal_submission_id`), KEY `idx_proposal_evaluation_evaluator` (`evaluator_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

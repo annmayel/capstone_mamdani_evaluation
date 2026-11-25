@@ -17,48 +17,10 @@ if ($project) {
   $projectId = (int) $project['id'];
   $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
   $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
-  $proposalEvaluations = [];
-  if ($proposalSubmission) {
-    $proposalEvaluationSubmissionId = (int) $proposalSubmission['id'];
-    $proposalCriteria = proposal_criteria();
-    $columns = array_column($proposalCriteria, 'key');
-    $scoreConditions = implode(' AND ', array_map(static fn($column) => $column . ' IS NOT NULL', $columns));
-    $proposalStmt = $pdo->prepare(
-      'SELECT e.* FROM evaluations_project e
-       INNER JOIN (
-         SELECT evaluator_id, MAX(id) AS latest_id
-         FROM evaluations_project
-         WHERE project_id = ? AND proposal_submission_id = ? AND proposal_status = \'submitted\' AND ' . $scoreConditions . '
-         GROUP BY evaluator_id
-       ) latest ON latest.latest_id = e.id ORDER BY e.id'
-    );
-    $proposalStmt->execute([$projectId, $proposalEvaluationSubmissionId]);
-    $proposalEvaluations = $proposalStmt->fetchAll(PDO::FETCH_ASSOC);
-    $officialProposalSubmissionId = (int) ($project['proposal_verdict_submission_id'] ?? 0);
-    if (!$proposalEvaluations && $officialProposalSubmissionId > 0 && $officialProposalSubmissionId !== $proposalEvaluationSubmissionId) {
-      $proposalStmt->execute([$projectId, $officialProposalSubmissionId]);
-      $proposalEvaluations = $proposalStmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-    if ($proposalEvaluations) {
-      $averages = array_fill_keys(array_keys($proposalCriteria), 0.0);
-      foreach ($proposalEvaluations as $evaluation) {
-        foreach ($proposalCriteria as $key => $criterion) {
-          $averages[$key] += (float) $evaluation[$criterion['key']];
-        }
-      }
-      foreach ($averages as $key => $score) {
-        $averages[$key] = round($score / count($proposalEvaluations), 2);
-      }
-      $total = round(array_sum($averages), 2);
-      $percentage = round($total / 120 * 100, 2);
-      $proposalResult = [
-        'criteria' => $proposalCriteria,
-        'averages' => $averages,
-        'total' => $total,
-        'percentage' => $percentage,
-        'recommendation' => proposal_verdict_from_score($percentage),
-        'evaluations' => $proposalEvaluations,
-      ];
+  if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false) {
+    $panel = proposal_consolidated($pdo, $projectId, (int) $proposalSubmission['id']);
+    if ($panel['calculated_score'] !== null) {
+      $proposalResult = ['criteria' => proposal_criteria(), 'averages' => $panel['criteria'], 'total' => $panel['calculated_score'], 'percentage' => $panel['calculated_score'], 'recommendation' => $panel['recommendation'], 'evaluations' => []];
     }
   }
   $finalStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
@@ -95,11 +57,10 @@ if ($project) {
       <?php if ($proposalResult): ?>
         <section class="evaluation-card">
           <div class="evaluation-card-heading"><span class="evaluation-step">PROPOSAL</span><h2>Proposal Evaluation Results</h2></div>
-          <p><strong>Total score:</strong> <?=number_format($proposalResult['total'], 2)?> / 120 · <?=number_format($proposalResult['percentage'], 2)?>%</p>
+          <p><strong>Total score:</strong> <?=number_format($proposalResult['total'], 2)?> / 100 · <?=number_format($proposalResult['percentage'], 2)?>%</p>
           <p><strong>Recommended verdict:</strong> <?=esc($proposalResult['recommendation']['label'])?></p>
           <p><strong>Official verdict:</strong> <?=!empty($project['proposal_confirmed_at']) ? esc($project['proposal_official_verdict']) : 'Pending Chairperson confirmation'?></p>
           <?php if (!empty($project['proposal_required_revisions'])): ?><p><strong>Required revisions:</strong><br><?=nl2br(esc($project['proposal_required_revisions']))?></p><?php endif; ?>
-          <?php foreach ($proposalResult['evaluations'] as $evaluation): if (trim((string) ($evaluation['proposal_evaluator_comments'] ?? '')) !== ''): ?><p><strong>Evaluator feedback:</strong><br><?=nl2br(esc($evaluation['proposal_evaluator_comments']))?></p><?php endif; endforeach; ?>
           <?php if (!empty($project['proposal_chairperson_comments'])): ?><p><strong>IT Chairperson comments:</strong><br><?=nl2br(esc($project['proposal_chairperson_comments']))?></p><?php endif; ?>
         </section>
       <?php endif; ?>

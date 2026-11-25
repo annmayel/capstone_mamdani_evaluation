@@ -22,56 +22,43 @@ $submission = $project ? latest_stage_submission($pdo, $projectId, 'proposal') :
 $submissionReady = $submission && !empty($submission['stored_filename'])
     && is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename']);
 $canConfirmRevision = $published
-    && ($project['proposal_official_verdict'] ?? '') === 'Not Approved'
+    && in_array(($project['proposal_official_verdict'] ?? ''), ['REDEFENSE', 'FAILED'], true)
     && $submissionReady
     && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
     && (int) ($project['proposal_revision_accepted_submission_id'] ?? 0) !== (int) $submission['id']
     && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
 $canAcceptRevisions = $published
     && (
-        in_array($project['proposal_official_verdict'] ?? '', ['Approved with Minor Revision', 'Approved with Major Revision'], true)
-        || (($project['proposal_official_verdict'] ?? '') === 'Approved' && trim((string) ($project['proposal_required_revisions'] ?? '')) !== '')
+        in_array($project['proposal_official_verdict'] ?? '', ['PASSED/APPROVED (Minor Revision)', 'PASSED/APPROVED (Major Revision)'], true)
+        || (($project['proposal_official_verdict'] ?? '') === 'PASSED/APPROVED (No Revision)' && trim((string) ($project['proposal_required_revisions'] ?? '')) !== '')
     )
     && $submissionReady
     && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
     && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
 
 if ($project) {
-    $scoreColumns = array_column($criteria, 'key');
-    $scoreConditions = implode(' AND ', array_map(static fn($column) => $column . ' IS NOT NULL', $scoreColumns));
-    $individualStmt = $pdo->prepare(
-        'SELECT e.*, u.full_name AS evaluator_name
-         FROM evaluations_project e
-         INNER JOIN (
-             SELECT evaluator_id, MAX(id) AS latest_id
-             FROM evaluations_project
-             WHERE project_id=? AND proposal_status=\'submitted\' AND proposal_submission_id=? AND ' . $scoreConditions . '
-             GROUP BY evaluator_id
-         ) latest ON latest.latest_id=e.id
-         INNER JOIN users u ON u.id=e.evaluator_id
-         ORDER BY u.full_name'
-    );
-    $individualStmt->execute([$projectId, (int) ($submission['id'] ?? 0)]);
-    foreach ($individualStmt->fetchAll(PDO::FETCH_ASSOC) as $evaluation) {
-        $validation = proposal_validate_scores($evaluation, true);
-        if ($validation['errors']) {
-            continue;
+    $proposalSchemaReady = $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false;
+    if (!$proposalSchemaReady) {
+        $errors[] = 'The CEIT-T07A proposal evaluation schema is not installed. Apply migration 021 before reviewing proposal results.';
+    } elseif ($submission) {
+        $consolidated = proposal_consolidated($pdo, $projectId, (int) $submission['id']);
+        $evaluations = $consolidated['evaluations'];
+        $criterionAverages = $consolidated['criteria'];
+        $averageTotal = $consolidated['calculated_score'];
+        $recommendation = $consolidated['recommendation'];
+        foreach ($evaluations as &$evaluation) {
+            $evaluation['evaluator_name'] = '';
         }
-        $evaluation['raw_score'] = $validation['total'];
-        $evaluation['percentage'] = $validation['percentage'];
-        $evaluation['recommended'] = proposal_verdict_from_score($validation['percentage']);
-        foreach (array_keys($criteria) as $criterionKey) {
-            $criterionAverages[$criterionKey] += (float) $evaluation[$criteria[$criterionKey]['key']];
+        unset($evaluation);
+        if ($evaluations) {
+            $names = $pdo->prepare('SELECT id, full_name FROM users WHERE id = ?');
+            foreach ($evaluations as &$evaluation) {
+                $names->execute([(int) $evaluation['evaluator_id']]);
+                $evaluation['evaluator_name'] = (string) ($names->fetchColumn() ?: 'Evaluator #' . (int) $evaluation['evaluator_id']);
+                $evaluation['recommended'] = proposal_verdict_from_score((float) $evaluation['total_score']);
+            }
+            unset($evaluation);
         }
-        $evaluations[] = $evaluation;
-    }
-
-    if ($evaluations) {
-        foreach ($criterionAverages as $criterionKey => $sum) {
-            $criterionAverages[$criterionKey] = round($sum / count($evaluations), 2);
-        }
-        $averageTotal = round(array_sum($criterionAverages), 2);
-        $recommendation = proposal_verdict_from_score(round(($averageTotal / 120) * 100, 2));
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accept_revisions') {
@@ -90,9 +77,9 @@ if ($project) {
                 $acceptStmt->execute([
                     (int) $submission['id'],
                     $projectId,
-                    'Approved with Minor Revision',
-                    'Approved with Major Revision',
-                    'Approved',
+                        'PASSED/APPROVED (Minor Revision)',
+                        'PASSED/APPROVED (Major Revision)',
+                        'PASSED/APPROVED (No Revision)',
                 ]);
                 if ($acceptStmt->rowCount() !== 1) {
                     throw new RuntimeException('Proposal revisions could not be accepted.');
@@ -123,7 +110,7 @@ if ($project) {
             if (strlen($comments) > 4000) {
                 $errors[] = 'Chairperson comments cannot exceed 4,000 characters.';
             }
-            if ($recommendation['label'] !== 'Approved' && $revisions === '') {
+            if ($recommendation['label'] !== 'PASSED/APPROVED (No Revision)' && $revisions === '') {
                 $errors[] = 'Record the required revisions before confirming this verdict.';
             }
             if (!$errors) {
@@ -171,7 +158,7 @@ if ($project) {
                         throw new RuntimeException('Proposal verdict was already confirmed or the project changed.');
                     }
                     $pdo->prepare("UPDATE student_submissions SET status=? WHERE id=?")->execute([
-                        $recommendation['label'] === 'Approved' && $revisions === '' ? 'approved' : 'revision_required',
+                        $recommendation['label'] === 'PASSED/APPROVED (No Revision)' && $revisions === '' ? 'approved' : 'revision_required',
                         $submission ? (int) $submission['id'] : 0,
                     ]);
                     $pdo->commit();
@@ -203,7 +190,7 @@ if ($project) {
     <section class="proposal-review-card">
       <h2>Panel Score Summary</h2>
       <?php if ($evaluations): ?>
-        <div class="proposal-review-summary"><div><small>Panel Total</small><strong><?=number_format((float) $averageTotal, 2)?> / 120</strong></div><div><small>Panel Percentage</small><strong><?=number_format((float) $recommendation['percentage'], 2)?>%</strong></div><div><small>Mamdani Output</small><strong><?=number_format((float) $recommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Recommended Verdict</small><strong><?=esc($recommendation['label'])?></strong><p><?=esc($recommendation['description'])?></p></div></div>
+        <div class="proposal-review-summary"><div><small>Panel Total</small><strong><?=number_format((float) $averageTotal, 2)?> / 100</strong></div><div><small>Panel Percentage</small><strong><?=number_format((float) $recommendation['percentage'], 2)?>%</strong></div><div><small>Mamdani Output</small><strong><?=number_format((float) $recommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Recommended Verdict</small><strong><?=esc($recommendation['label'])?></strong><p><?=esc($recommendation['description'])?></p></div></div>
         <div class="proposal-review-table-wrap"><table class="proposal-review-table"><thead><tr><th>Criteria</th><th>Panel Average</th><th>Maximum</th></tr></thead><tbody>
           <?php foreach ($criteria as $criterionKey => $criterion): ?><tr><td><?=esc($criterion['label'])?></td><td><?=number_format($criterionAverages[$criterionKey], 2)?></td><td><?=esc($criterion['maximum'])?></td></tr><?php endforeach; ?>
         </tbody></table></div>
@@ -214,10 +201,10 @@ if ($project) {
 
     <?php foreach ($evaluations as $evaluation): ?>
       <section class="proposal-review-card">
-        <h2><?=esc($evaluation['evaluator_name'])?> <small>· <?=number_format($evaluation['raw_score'], 2)?> / 120 · <?=number_format($evaluation['percentage'], 2)?>%</small></h2>
+        <h2><?=esc($evaluation['evaluator_name'])?> <small>· <?=number_format((float) $evaluation['total_score'], 2)?> / 100</small></h2>
         <p class="proposal-review-computed">Computed recommendation: <strong><?=esc($evaluation['recommended']['label'])?></strong></p>
         <div class="proposal-review-detail-grid"><?php foreach ($criteria as $criterion): ?><article><strong><?=esc($criterion['label'])?> <span><?=number_format((float) $evaluation[$criterion['key']], 2)?> / <?=esc($criterion['maximum'])?></span></strong><p><?=nl2br(esc((string) ($evaluation[$criterion['comment_key']] ?: 'No criterion comment.')))?></p></article><?php endforeach; ?></div>
-        <div class="proposal-review-overall"><strong>Evaluator Recommendations</strong><p><?=nl2br(esc((string) ($evaluation['proposal_evaluator_comments'] ?: 'No overall recommendations.')))?></p></div>
+        <div class="proposal-review-overall"><strong>Evaluator Recommendations</strong><p><?=nl2br(esc((string) ($evaluation['recommendations'] ?: $evaluation['overall_comments'] ?: 'No overall recommendations.')))?></p></div>
       </section>
     <?php endforeach; ?>
 
@@ -238,7 +225,7 @@ if ($project) {
         <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
         <h2>Confirm Official Proposal Verdict</h2>
         <p>The official verdict is fixed to the calculated recommendation above; it cannot be changed to another category here.</p>
-        <label><span>Required revisions</span><textarea name="proposal_required_revisions" rows="4" maxlength="4000" <?=($recommendation && $recommendation['label'] === 'Approved' ? '' : 'required')?>><?=esc((string) ($_POST['proposal_required_revisions'] ?? ''))?></textarea></label>
+        <label><span>Required revisions</span><textarea name="proposal_required_revisions" rows="4" maxlength="4000" <?=($recommendation && $recommendation['label'] === 'PASSED/APPROVED (No Revision)' ? '' : 'required')?>><?=esc((string) ($_POST['proposal_required_revisions'] ?? ''))?></textarea></label>
         <label><span>IT Chairperson comments</span><textarea name="proposal_chairperson_comments" rows="3" maxlength="4000"><?=esc((string) ($_POST['proposal_chairperson_comments'] ?? ''))?></textarea></label>
         <button type="submit" class="btn primary" <?=(!$recommendation ? 'disabled' : '')?>>Confirm Official Verdict</button>
       </form>

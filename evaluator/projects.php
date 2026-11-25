@@ -22,8 +22,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
       <li class="nav-section-label">Workspace</li>
       <li><a href="dashboard.php"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-label">Dashboard</span></a></li>
       <li class="nav-section-label">Evaluation</li>
-      <li><a href="projects.php" class="<?=$active === 'projects' ? 'active' : ''?>" <?=$active === 'projects' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">▰</span><span class="nav-label">Evaluate Projects</span></a></li>
-      <li><a href="papers.php" class="<?=$active === 'papers' ? 'active' : ''?>" <?=$active === 'papers' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">▤</span><span class="nav-label">Evaluate Papers</span></a></li>
+      <li><a href="projects.php" class="<?=$active === 'projects' ? 'active' : ''?>" <?=$active === 'projects' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">▰</span><span class="nav-label">Evaluation Workspace</span></a></li>
       <li><a href="evaluation_history.php" class="<?=$active === 'history' ? 'active' : ''?>" <?=$active === 'history' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-label">Evaluation History</span></a></li>
       <li class="nav-section-label">Account</li>
       <li><a href="profile.php" class="<?=$active === 'profile' ? 'active' : ''?>" <?=$active === 'profile' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">◎</span><span class="nav-label">Profile</span></a></li>
@@ -40,7 +39,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Evaluate Projects</title>
+  <title>Evaluation Workspace</title>
   <link rel="stylesheet" href="../assets/style.css?v=20260918">
   <link rel="stylesheet" href="evaluator-content.css?v=20261106">
   <link rel="stylesheet" href="evaluator-typography.css?v=20261112">
@@ -58,11 +57,11 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
         <div class="evaluator-topbar-end"><div class="account-avatar" aria-hidden="true"><?=esc(strtoupper(substr($displayName ?: 'E', 0, 1)))?></div><span><?=esc($displayName)?></span></div>
       </div>
       <header class="main-header">
-        <div class="main-header-text"><span class="page-eyebrow">Evaluation workspace</span><h1>Evaluate Projects</h1><p>Review only the capstone projects assigned to you.</p></div>
-        <div class="assigned-count"><strong><?=count($projects)?></strong> assigned <?=count($projects) === 1 ? 'project' : 'projects'?></div>
+        <div class="main-header-text"><span class="page-eyebrow">Proposal stage</span><h1>Evaluation Workspace</h1><p>Review each assigned proposal manuscript and proposed project in one official CEIT-T07A evaluation.</p></div>
+        <div class="assigned-count"><strong><?=count($projects)?></strong> assigned <?=count($projects) === 1 ? 'submission' : 'submissions'?></div>
       </header>
       <section class="work-panel" aria-labelledby="project-list-title">
-        <div class="work-panel-head"><div><h2 id="project-list-title">Assigned Project Evaluations</h2><p>Search and refine your project assignments.</p></div></div>
+        <div class="work-panel-head"><div><h2 id="project-list-title">Assigned Proposal Submissions</h2><p>Each submission has one unified evaluation sheet.</p></div></div>
         <div class="filters" aria-label="Project filters">
           <div class="filter-field filter-search"><label for="project-search">Search projects</label><input id="project-search" type="search" placeholder="Title, group, or adviser" data-filter="search"></div>
           <div class="filter-field"><label for="project-status">Assignment status</label><select id="project-status" data-filter="status" data-populate="status"><option value="">All statuses</option></select></div>
@@ -73,11 +72,11 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
           <button class="filter-reset" type="button" data-reset-filters>Reset filters</button>
         </div>
         <?php if (!$projects): ?>
-          <div class="empty-state" data-empty-state><div class="empty-state-mark" aria-hidden="true">⌑</div><h3>No projects assigned yet</h3><p>Projects assigned to you will appear here.</p></div>
+          <div class="empty-state" data-empty-state><div class="empty-state-mark" aria-hidden="true">⌑</div><h3>No submissions assigned yet</h3><p>Proposal submissions assigned to you will appear here.</p></div>
         <?php else: ?>
           <div class="table-scroll">
             <table class="data-table" data-evaluator-list aria-describedby="project-range">
-              <thead><tr><th scope="col">Project title</th><th scope="col">Group</th><th scope="col">Adviser</th><th scope="col">Defense date</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+              <thead><tr><th scope="col">Proposal title</th><th scope="col">Group</th><th scope="col">Adviser</th><th scope="col">Defense date</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
               <tbody>
                 <?php foreach ($projects as $project):
                   $assignmentStatus = strtolower((string)($project['assignment_status'] ?? 'assigned'));
@@ -92,7 +91,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                     <td class="title-cell"><span class="project-title"><?=esc($title)?></span></td><td><?=esc($group ?: 'Not set')?></td><td><?=esc($adviser ?: 'Not assigned')?></td>
                     <td><?= $defenseDate !== '' ? esc(date('M j, Y', strtotime($defenseDate))) : '<span class="muted-cell">Not set</span>' ?></td>
                     <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span></td>
-                    <td><a class="action-link" href="evaluate_selection.php?project_id=<?=esc($project['id'])?>">Evaluate project</a></td>
+                    <td><a class="action-link" href="evaluate_project.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a></td>
                   </tr>
                 <?php endforeach; ?>
                 <tr class="no-results-row" data-no-results hidden><td colspan="6">No projects match these filters. Adjust or reset your filters.</td></tr>

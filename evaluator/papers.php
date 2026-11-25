@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../config.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
+header('Location: projects.php');
+exit;
 $evaluatorId = (int) $_SESSION['user']['id'];
 $stmt = $pdo->prepare('SELECT p.*, a.status AS assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id = p.id WHERE a.evaluator_id = ? ORDER BY p.id DESC');
 $stmt->execute([$evaluatorId]);

@@ -45,11 +45,11 @@ function proposal_allows_final_submission(array $project, ?array $proposalSubmis
     }
 
     $hasRequiredRevisions = trim((string) ($project['proposal_required_revisions'] ?? '')) !== '';
-    if ($project['proposal_official_verdict'] === 'Approved' && !$hasRequiredRevisions) {
+    if ($project['proposal_official_verdict'] === 'PASSED/APPROVED (No Revision)' && !$hasRequiredRevisions) {
         return true;
     }
 
-    return in_array($project['proposal_official_verdict'], ['Approved', 'Approved with Minor Revision', 'Approved with Major Revision'], true)
+    return in_array($project['proposal_official_verdict'], ['PASSED/APPROVED (No Revision)', 'PASSED/APPROVED (Minor Revision)', 'PASSED/APPROVED (Major Revision)'], true)
         && $proposalSubmission !== null
         && !empty($project['proposal_revision_accepted_submission_id'])
         && (int) $project['proposal_revision_accepted_submission_id'] === (int) $proposalSubmission['id'];

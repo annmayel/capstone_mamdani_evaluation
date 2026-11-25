@@ -1129,22 +1129,15 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
 <?php endif; ?>
 <?php if ($view === 'results' && $project): ?>
   <section class="portal-panel proposal-student-result">
-    <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Official Proposal Result</h3></div><?php if ($proposalPanelPercentage !== null): ?><strong class="panel-score"><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage), 2)?>%</strong><?php endif; ?></div>
-    <?php if ($proposalPanelPercentage === null): ?>
-      <div class="empty-state">No complete proposal rubric has been submitted yet.</div>
+    <?php $proposalIsConfirmed = !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']); ?>
+    <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Official Proposal Result</h3></div><?php if ($proposalIsConfirmed): ?><strong class="panel-score"><?=number_format((float) $project['proposal_official_score'], 2)?>%</strong><?php endif; ?></div>
+    <?php if (!$proposalIsConfirmed): ?>
+      <div class="empty-state">Your proposal result will be available after the IT Chairperson publishes the official decision.</div>
     <?php else: ?>
-      <?php $proposalIsConfirmed = !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']); ?>
-      <div class="detail-grid"><div><small>Panel Total Score</small><strong><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage) * 1.2, 2)?> / 120</strong></div><div><small>Percentage</small><strong><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage), 2)?>%</strong></div><div><small><?=($proposalIsConfirmed ? 'Official Verdict' : 'Recommended Verdict')?></small><strong><?=esc($proposalIsConfirmed ? $project['proposal_official_verdict'] : proposal_verdict_from_score($proposalPanelPercentage)['label'])?></strong></div><div><small>Chairperson Review</small><strong><?=($proposalIsConfirmed ? 'Confirmed' : 'Pending confirmation')?></strong></div></div>
-      <?php if ($proposalIsConfirmed && !empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Required Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
-      <?php if ($proposalIsConfirmed && !empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson Comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
-      <h4>Proposal Criteria and Evaluator Feedback</h4>
-      <?php foreach (proposal_criteria() as $criterionKey => $criterion): ?>
-        <article class="proposal-student-criterion"><div><strong><?=esc($criterion['label'])?></strong><small>Panel average: <?=number_format((float) ($proposalCriterionAverages[$criterionKey] ?? 0), 2)?> / <?=esc($criterion['maximum'])?></small></div>
-          <?php $hasCriterionFeedback = false; foreach ($proposalEvaluations as $proposalEvaluation): $criterionComment = trim((string) ($proposalEvaluation[$criterion['comment_key']] ?? '')); if ($criterionComment !== ''): $hasCriterionFeedback = true; ?><p><strong><?=esc($proposalEvaluation['evaluator_name'] ?: 'Evaluator')?>:</strong> <?=nl2br(esc($criterionComment))?></p><?php endif; endforeach; ?>
-          <?php if (!$hasCriterionFeedback): ?><p class="muted-comment">No criterion-specific comment was recorded.</p><?php endif; ?>
-        </article>
-      <?php endforeach; ?>
-      <?php foreach ($proposalEvaluations as $proposalEvaluation): if (trim((string) ($proposalEvaluation['remarks'] ?? '')) !== ''): ?><div class="proposal-student-revisions"><strong><?=esc($proposalEvaluation['evaluator_name'] ?: 'Evaluator')?> · Overall Recommendations</strong><p><?=nl2br(esc($proposalEvaluation['remarks']))?></p></div><?php endif; endforeach; ?>
+      <?php $publishedProposal = proposal_verdict_from_score((float) $project['proposal_official_score']); ?>
+      <div class="detail-grid"><div><small>Consolidated score</small><strong><?=number_format((float) $project['proposal_official_score'], 2)?> / 100</strong></div><div><small>Fuzzy linguistic rating</small><strong><?=esc($publishedProposal['fuzzy']['rating'])?></strong></div><div><small>Defuzzified output</small><strong><?=number_format((float) $publishedProposal['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Official verdict</small><strong><?=esc($project['proposal_official_verdict'])?></strong></div></div>
+      <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+      <?php if (!empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson Comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
     <?php endif; ?>
   </section>
 <?php endif; ?>
