@@ -3,10 +3,17 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/stage_submission_migration.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'dean') {
   header('Location: ../index.php');
   exit;
+}
+$workflowSchemaState = stage_submission_schema_state($pdo);
+if (!stage_submission_schema_is_ready($workflowSchemaState)) {
+  http_response_code(503);
+  header('Content-Type: text/plain; charset=UTF-8');
+  exit('E3 verdict storage is not ready. Run php /var/www/html/bin/migrate_workflow_schema.php from the Railway application shell, then reload this page.');
 }
 $projectId = (int) ($_GET['project_id'] ?? 0);
 if ($projectId <= 0) {

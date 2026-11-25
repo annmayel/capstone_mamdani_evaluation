@@ -33,6 +33,10 @@ final class StageSubmissionMigrationTest extends TestCase
 
         unset($state['columns']['student_submissions']['stage']);
         self::assertFalse(stage_submission_schema_is_ready($state));
+
+        $state['columns']['student_submissions']['stage'] = "enum('proposal','final')";
+        unset($state['columns']['e3_final_verdicts']['final_submission_id']);
+        self::assertFalse(stage_submission_schema_is_ready($state));
     }
 
     public function testStatusMigrationPreservesExistingEnumValues(): void
