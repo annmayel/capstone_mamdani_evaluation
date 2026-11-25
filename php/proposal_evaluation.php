@@ -53,6 +53,61 @@ function proposal_consolidated(PDO $pdo,int $projectId,int $submissionId): array
     return ['evaluations'=>$evaluations,'criteria'=>$averages,'calculated_score'=>$score,'evaluator_count'=>count($evaluations),'recommendation'=>$score===null?null:proposal_verdict_from_score($score)];
 }
 
+/**
+ * Returns the publication state of a CEIT-T07A panel sheet.
+ *
+ * A submitted evaluation is counted only when all rubric scores are present
+ * (the same definition used by proposal_consolidated).  This deliberately
+ * does not use evaluator_assignments.status: assignment status is workflow
+ * metadata and is not evidence that a complete score sheet was submitted.
+ */
+function proposal_panel_completion(PDO $pdo, int $projectId, int $submissionId): array
+{
+    $assignmentStmt = $pdo->prepare(
+        'SELECT DISTINCT evaluator_id FROM evaluator_assignments WHERE project_id = ?'
+    );
+    $assignmentStmt->execute([$projectId]);
+    $assignedEvaluatorIds = array_values(array_unique(array_map(
+        static fn(array $row): int => (int) $row['evaluator_id'],
+        $assignmentStmt->fetchAll(PDO::FETCH_ASSOC)
+    )));
+
+    $consolidated = proposal_consolidated($pdo, $projectId, $submissionId);
+    $submittedEvaluatorIds = array_values(array_unique(array_map(
+        static fn(array $row): int => (int) $row['evaluator_id'],
+        $consolidated['evaluations']
+    )));
+    $pendingEvaluatorIds = array_values(array_diff($assignedEvaluatorIds, $submittedEvaluatorIds));
+
+    return [
+        'ready' => count($assignedEvaluatorIds) > 0 && count($pendingEvaluatorIds) === 0,
+        'assigned_evaluator_ids' => $assignedEvaluatorIds,
+        'submitted_evaluator_ids' => $submittedEvaluatorIds,
+        'pending_evaluator_ids' => $pendingEvaluatorIds,
+        'assigned_count' => count($assignedEvaluatorIds),
+        'submitted_count' => count($submittedEvaluatorIds),
+        'consolidated' => $consolidated,
+    ];
+}
+
+/** @return array<int,string> evaluator id => display name */
+function proposal_evaluator_names(PDO $pdo, array $evaluations): array
+{
+    $ids = array_values(array_unique(array_filter(array_map(
+        static fn(array $row): int => (int) ($row['evaluator_id'] ?? 0),
+        $evaluations
+    ))));
+    if (!$ids) return [];
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $pdo->prepare("SELECT id, full_name FROM users WHERE id IN ($placeholders)");
+    $stmt->execute($ids);
+    $names = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $names[(int) $row['id']] = (string) ($row['full_name'] ?: 'Panel evaluator');
+    }
+    return $names;
+}
+
 function proposal_verdict_bands(): array { return official_verdict_definitions(); }
 
 function proposal_verdict_from_score(float $score): array

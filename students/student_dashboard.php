@@ -119,11 +119,23 @@ $stmt->execute([$uid]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 $project = $project ?: null;
 $latestProposalSubmission = null;
+$proposalPanel = null;
+$proposalPanelEvaluatorNames = [];
 if ($project) {
     try {
         $latestProposalSubmission = latest_stage_submission($pdo, (int) $project['id'], 'proposal');
     } catch (PDOException $exception) {
         error_log('[student dashboard] Could not load the current proposal submission: ' . $exception->getMessage());
+    }
+    if ($latestProposalSubmission && proposal_evaluation_schema_available($pdo)) {
+        try {
+            $proposalPanel = proposal_panel_completion($pdo, (int) $project['id'], (int) $latestProposalSubmission['id']);
+            if ($proposalPanel['ready']) {
+                $proposalPanelEvaluatorNames = proposal_evaluator_names($pdo, $proposalPanel['consolidated']['evaluations']);
+            }
+        } catch (Throwable $exception) {
+            error_log('[student dashboard] Could not load proposal panel completion: ' . $exception->getMessage());
+        }
     }
 }
 if ($view === 'results' && $project) {
@@ -1100,14 +1112,23 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
 <?php endif; ?>
 <?php if ($view === 'results' && $project): ?>
   <section class="portal-panel proposal-student-result">
-    <?php $proposalIsConfirmed = !empty($latestProposalSubmission) && !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $latestProposalSubmission['id']; ?>
-    <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Official Proposal Result</h3></div><?php if ($proposalIsConfirmed): ?><strong class="panel-score"><?=number_format((float) $project['proposal_official_score'], 2)?>%</strong><?php endif; ?></div>
-    <?php if (!$proposalIsConfirmed): ?>
-      <div class="empty-state">Your proposal result will be available after the IT Chairperson publishes the official decision.</div>
+    <?php $proposalPanelReady = $proposalPanel && $proposalPanel['ready'] && $proposalPanel['consolidated']['calculated_score'] !== null; ?>
+    <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Proposal Panel Result</h3></div><?php if ($proposalPanelReady): ?><strong class="panel-score"><?=number_format((float) $proposalPanel['consolidated']['calculated_score'], 2)?>%</strong><?php endif; ?></div>
+    <?php if (!$proposalPanelReady): ?>
+      <div class="empty-state">Pending Panel Evaluation<?php if ($proposalPanel): ?> — <?=esc((string) $proposalPanel['submitted_count'])?> of <?=esc((string) $proposalPanel['assigned_count'])?> assigned evaluators have submitted complete evaluations.<?php else: ?>.<?php endif; ?></div>
     <?php else: ?>
-      <?php $publishedProposal = proposal_verdict_from_score((float) $project['proposal_official_score']); ?>
-      <div class="detail-grid"><div><small>Consolidated score</small><strong><?=number_format((float) $project['proposal_official_score'], 2)?> / 100</strong></div><div><small>Fuzzy linguistic rating</small><strong><?=esc($publishedProposal['fuzzy']['rating'])?></strong></div><div><small>Defuzzified output</small><strong><?=number_format((float) $publishedProposal['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Official verdict</small><strong><?=esc($project['proposal_official_verdict'])?></strong></div></div>
-      <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+      <?php $publishedProposal = $proposalPanel['consolidated']['recommendation']; ?>
+      <div class="detail-grid"><div><small>Consolidated score</small><strong><?=number_format((float) $proposalPanel['consolidated']['calculated_score'], 2)?> / 100</strong></div><div><small>Fuzzy linguistic rating</small><strong><?=esc($publishedProposal['fuzzy']['rating'])?></strong></div><div><small>Defuzzified output</small><strong><?=number_format((float) $publishedProposal['fuzzy']['defuzz'], 2)?> / 100</strong></div><div><small>Panel recommendation</small><strong><?=esc($publishedProposal['label'])?></strong></div></div>
+      <?php foreach ($proposalPanel['consolidated']['evaluations'] as $evaluation): ?>
+        <?php $evaluatorName = $proposalPanelEvaluatorNames[(int) $evaluation['evaluator_id']] ?? 'Panel evaluator'; ?>
+        <div class="proposal-student-revisions"><strong><?=esc($evaluatorName)?></strong><p>Panel score: <?=number_format((float) $evaluation['total_score'], 2)?> / 100</p>
+          <?php foreach (proposal_criteria() as $code => $criterion): $comment = trim((string) ($evaluation[$criterion['comment_key']] ?? '')); ?><?php if ($comment !== ''): ?><p><strong><?=esc($code)?> · <?=esc($criterion['label'])?>:</strong><br><?=nl2br(esc($comment))?></p><?php endif; ?><?php endforeach; ?>
+          <?php if (trim((string) ($evaluation['overall_comments'] ?? '')) !== ''): ?><p><strong>Overall comments:</strong><br><?=nl2br(esc($evaluation['overall_comments']))?></p><?php endif; ?>
+          <?php if (trim((string) ($evaluation['recommendations'] ?? '')) !== ''): ?><p><strong>Recommendations:</strong><br><?=nl2br(esc($evaluation['recommendations']))?></p><?php endif; ?>
+          <?php if (trim((string) ($evaluation['required_revisions'] ?? '')) !== ''): ?><p><strong>Required revisions / suggestions:</strong><br><?=nl2br(esc($evaluation['required_revisions']))?></p><?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+      <?php if (!empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson record: <?=esc($project['proposal_official_verdict'])?></strong></div><?php endif; ?>
       <?php if (!empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson Comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
     <?php endif; ?>
   </section>

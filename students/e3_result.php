@@ -12,19 +12,22 @@ $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
 $final = null;
 $consolidated = null;
 $proposalResult = null;
+$proposalEvaluatorNames = [];
 $finalSubmission = null;
 if ($project) {
   $projectId = (int) $project['id'];
   $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
   $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
-  if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && proposal_evaluation_schema_available($pdo)) {
+  if ($proposalSubmission && proposal_evaluation_schema_available($pdo)) {
     try {
-      $panel = proposal_consolidated($pdo, $projectId, (int) $proposalSubmission['id']);
-      if ($panel['calculated_score'] !== null) {
-        $proposalResult = ['criteria' => proposal_criteria(), 'averages' => $panel['criteria'], 'total' => $panel['calculated_score'], 'percentage' => $panel['calculated_score'], 'recommendation' => $panel['recommendation'], 'evaluations' => []];
+      $panelStatus = proposal_panel_completion($pdo, $projectId, (int) $proposalSubmission['id']);
+      $panel = $panelStatus['consolidated'];
+      if ($panelStatus['ready'] && $panel['calculated_score'] !== null) {
+        $proposalEvaluatorNames = proposal_evaluator_names($pdo, $panel['evaluations']);
+        $proposalResult = ['criteria' => proposal_criteria(), 'averages' => $panel['criteria'], 'total' => $panel['calculated_score'], 'percentage' => $panel['calculated_score'], 'recommendation' => $panel['recommendation'], 'evaluations' => $panel['evaluations']];
       }
     } catch (Throwable $exception) {
-      error_log('[student E3 result] Published proposal result could not be loaded: ' . $exception->getMessage());
+      error_log('[student E3 result] Panel proposal result could not be loaded: ' . $exception->getMessage());
     }
   }
   $finalStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
@@ -63,7 +66,16 @@ if ($project) {
           <div class="evaluation-card-heading"><span class="evaluation-step">PROPOSAL</span><h2>Proposal Evaluation Results</h2></div>
           <p><strong>Total score:</strong> <?=number_format($proposalResult['total'], 2)?> / 100 · <?=number_format($proposalResult['percentage'], 2)?>%</p>
           <p><strong>Recommended verdict:</strong> <?=esc($proposalResult['recommendation']['label'])?></p>
-          <p><strong>Official verdict:</strong> <?=!empty($project['proposal_confirmed_at']) ? esc($project['proposal_official_verdict']) : 'Pending Chairperson confirmation'?></p>
+          <p><strong>Panel status:</strong> All assigned evaluators submitted complete evaluation sheets.</p>
+          <?php if (!empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict'])): ?><p><strong>IT Chairperson record:</strong> <?=esc($project['proposal_official_verdict'])?></p><?php endif; ?>
+          <?php foreach ($proposalResult['evaluations'] as $evaluation): ?>
+            <?php $evaluatorName = $proposalEvaluatorNames[(int) $evaluation['evaluator_id']] ?? 'Panel evaluator'; ?>
+            <hr><p><strong><?=esc($evaluatorName)?></strong> · <?=number_format((float) $evaluation['total_score'], 2)?> / 100</p>
+            <?php foreach ($proposalResult['criteria'] as $code => $criterion): $comment = trim((string) ($evaluation[$criterion['comment_key']] ?? '')); ?><?php if ($comment !== ''): ?><p><strong><?=esc($code)?> · <?=esc($criterion['label'])?>:</strong><br><?=nl2br(esc($comment))?></p><?php endif; ?><?php endforeach; ?>
+            <?php if (trim((string) ($evaluation['overall_comments'] ?? '')) !== ''): ?><p><strong>Overall comments:</strong><br><?=nl2br(esc($evaluation['overall_comments']))?></p><?php endif; ?>
+            <?php if (trim((string) ($evaluation['recommendations'] ?? '')) !== ''): ?><p><strong>Recommendations:</strong><br><?=nl2br(esc($evaluation['recommendations']))?></p><?php endif; ?>
+            <?php if (trim((string) ($evaluation['required_revisions'] ?? '')) !== ''): ?><p><strong>Required revisions / suggestions:</strong><br><?=nl2br(esc($evaluation['required_revisions']))?></p><?php endif; ?>
+          <?php endforeach; ?>
           <?php if (!empty($project['proposal_required_revisions'])): ?><p><strong>Required revisions:</strong><br><?=nl2br(esc($project['proposal_required_revisions']))?></p><?php endif; ?>
           <?php if (!empty($project['proposal_chairperson_comments'])): ?><p><strong>IT Chairperson comments:</strong><br><?=nl2br(esc($project['proposal_chairperson_comments']))?></p><?php endif; ?>
         </section>
