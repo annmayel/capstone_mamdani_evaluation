@@ -1,7 +1,6 @@
 .git
 .env
 .env.*
-/sql
 !/profile_dev
 /profile_dev/*
 !/profile_dev/ronela2.jpg
