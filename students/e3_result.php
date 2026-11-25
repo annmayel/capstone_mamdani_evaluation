@@ -12,6 +12,7 @@ $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
 $final = null;
 $consolidated = null;
 $proposalResult = null;
+$finalSubmission = null;
 if ($project) {
   $projectId = (int) $project['id'];
   $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
@@ -63,7 +64,9 @@ if ($project) {
   $finalStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
   $finalStmt->execute([$projectId]);
   $final = $finalStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-  if ($final && ($finalSubmission ? empty($final['final_submission_id']) : !empty($final['final_submission_id']))) {
+  if ($final && ($finalSubmission
+    ? (int) ($final['final_submission_id'] ?? 0) !== (int) $finalSubmission['id']
+    : !empty($final['final_submission_id']))) {
     $final = null;
   }
   if ($final) {
@@ -86,8 +89,9 @@ if ($project) {
     <?php if (!$final): ?>
       <section class="evaluation-card"><h1>E3 Verdict Pending</h1><p>No approved and published E3 verdict is available yet.</p></section>
     <?php else: ?>
-      <?php $verdict = e3_stage_verdict_from_score((float) $final['final_score']); ?>
+      <?php $recommendedVerdict = e3_stage_verdict_from_score((float) $final['calculated_score']); ?>
       <header class="main-header"><div class="main-header-text"><h1>Capstone Evaluation Results</h1><p><?=esc($project['title'])?></p></div></header>
+      <?php if ($finalSubmission): ?><section class="evaluation-card"><div class="evaluation-card-heading"><span class="evaluation-step">FINAL PAPER</span><h2>Submitted Final Paper</h2></div><p><strong>File:</strong> <?=esc($finalSubmission['original_filename'])?></p><p><strong>Submitted:</strong> <?=esc($finalSubmission['created_at'])?></p><p><strong>Status:</strong> <?=esc(stage_submission_status_label($finalSubmission))?></p><a class="btn ghost" href="view_submission.php?id=<?=esc($finalSubmission['id'])?>" target="_blank" rel="noopener">View submitted Final Paper PDF</a></section><?php endif; ?>
       <?php if ($proposalResult): ?>
         <section class="evaluation-card">
           <div class="evaluation-card-heading"><span class="evaluation-step">PROPOSAL</span><h2>Proposal Evaluation Results</h2></div>
@@ -107,15 +111,16 @@ if ($project) {
         <?php endforeach; ?>
         </tbody></table>
         <p><strong>Total score:</strong> <?=number_format((float) $final['final_score'], 2)?> / 100</p>
+        <p><strong>Percentage:</strong> <?=number_format((float) $final['final_score'], 2)?>%</p>
       </section>
       <section class="evaluation-card">
         <div class="evaluation-card-heading"><span class="evaluation-step">PART 2</span><h2>FINAL SCORE AND VERDICT</h2></div>
         <p><strong>Final Calculated Score:</strong> <?=number_format((float) $final['final_score'], 2)?> / 100</p>
-        <p><strong>Mamdani fuzzy output:</strong> <?=number_format((float) $verdict['fuzzy']['defuzz'], 2)?> / 100</p>
-        <p><strong>Recommended verdict:</strong> <?=esc($verdict['label'])?></p>
+        <p><strong>Mamdani fuzzy output:</strong> <?=number_format((float) $recommendedVerdict['fuzzy']['defuzz'], 2)?> / 100</p>
+        <p><strong>Recommended verdict:</strong> <?=esc($recommendedVerdict['label'])?></p>
         <p><strong>Official final-hearing verdict:</strong> <?=esc($final['verdict_label'])?></p>
         <p><strong>Chairperson confirmation:</strong> Confirmed <?=esc(date('M d, Y g:i A', strtotime($final['published_at'])))?></p>
-        <p><strong>What the verdict means:</strong> <?=esc($verdict['description'])?></p>
+        <p><strong>What the recommended verdict means:</strong> <?=esc($recommendedVerdict['description'])?></p>
         <?php if (!empty($final['has_departure'])): ?><p><strong>Authorized departure recorded:</strong> <?=esc($final['departure_authority'])?> — <?=esc($final['departure_reason'])?></p><?php endif; ?>
       </section>
       <section class="evaluation-card">

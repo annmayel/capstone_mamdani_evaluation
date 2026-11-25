@@ -1,7 +1,13 @@
 <?php
 
+function stage_submission_set_migration_operation(string $operation): void
+{
+    $GLOBALS['stage_submission_migration_operation'] = $operation;
+}
+
 function stage_submission_schema_state(PDO $pdo): array
 {
+    stage_submission_set_migration_operation('inspect_migration_019_columns');
     $rows = $pdo->query(
         "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE
          FROM information_schema.COLUMNS
@@ -20,6 +26,7 @@ function stage_submission_schema_state(PDO $pdo): array
         $columns[$row['TABLE_NAME']][$row['COLUMN_NAME']] = $row['COLUMN_TYPE'];
     }
 
+    stage_submission_set_migration_operation('inspect_migration_019_indexes');
     $indexRows = $pdo->query(
         "SELECT TABLE_NAME, INDEX_NAME
          FROM information_schema.STATISTICS
@@ -70,14 +77,36 @@ function stage_submission_schema_is_ready(array $state): bool
         && !isset($indexes['e3_evaluations']['uniq_e3_evaluation_project_evaluator']);
 }
 
+function stage_submission_status_enum_definition(string $columnType): string
+{
+    if (!preg_match('/^enum\((.*)\)$/i', $columnType, $typeMatch)
+        || !preg_match_all("/'([^']*)'/", $typeMatch[1], $valueMatches)) {
+        throw new RuntimeException('student_submissions.status must remain an ENUM; inspect its current schema before migration 019.');
+    }
+
+    $values = array_values(array_unique($valueMatches[1]));
+    foreach (['revision_required', 'approved', 'accepted'] as $requiredValue) {
+        if (!in_array($requiredValue, $values, true)) {
+            $values[] = $requiredValue;
+        }
+    }
+
+    return implode(',', array_map(
+        static fn(string $value): string => "'" . str_replace(["\\", "'"], ["\\\\", "\\'"], $value) . "'",
+        $values
+    ));
+}
+
 function ensure_stage_submission_schema(PDO $pdo): void
 {
     if (stage_submission_schema_is_ready(stage_submission_schema_state($pdo))) {
         return;
     }
 
+    stage_submission_set_migration_operation('resolve_target_database');
     $database = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
     $lockName = 'stage-workflow-' . substr(hash('sha256', $database), 0, 40);
+    stage_submission_set_migration_operation('acquire_schema_migration_lock');
     $lockStmt = $pdo->prepare('SELECT GET_LOCK(?, 15)');
     $lockStmt->execute([$lockName]);
     if ((int) $lockStmt->fetchColumn() !== 1) {
@@ -98,8 +127,24 @@ function ensure_stage_submission_schema(PDO $pdo): void
 
         $columns = $state['columns'];
         $indexes = $state['indexes'];
+        stage_submission_set_migration_operation('verify_prior_migration_prerequisites');
+        $prerequisites = [
+            'student_submissions' => ['project_id', 'status', 'created_at'],
+            'projects' => ['proposal_confirmed_at'],
+            'evaluations_project' => ['proposal_status', 'created_at'],
+            'e3_evaluations' => ['project_id', 'evaluator_id', 'status', 'created_at'],
+            'e3_final_verdicts' => ['project_id', 'chairperson_id', 'published_at'],
+        ];
+        foreach ($prerequisites as $table => $requiredColumns) {
+            foreach ($requiredColumns as $column) {
+                if (!isset($columns[$table][$column])) {
+                    throw new RuntimeException('Prerequisite schema is missing ' . $table . '.' . $column . '; verify earlier migrations before 019.');
+                }
+            }
+        }
 
         if (!isset($columns['student_submissions']['stage'])) {
+            stage_submission_set_migration_operation('add_student_submissions_stage');
             $pdo->exec(
                 "ALTER TABLE `student_submissions`
                  ADD COLUMN `stage` ENUM('proposal','final') NOT NULL DEFAULT 'proposal' AFTER `project_id`"
@@ -111,20 +156,15 @@ function ensure_stage_submission_schema(PDO $pdo): void
             || strpos($statusType, "'approved'") === false
             || strpos($statusType, "'accepted'") === false
         ) {
+            stage_submission_set_migration_operation('extend_student_submissions_status_enum');
             $pdo->exec(
-                "ALTER TABLE `student_submissions`
-                 MODIFY COLUMN `status` ENUM(
-                   'submitted',
-                   'under_evaluation',
-                   'evaluated',
-                   'revision_requested',
-                   'revision_required',
-                   'approved',
-                   'accepted'
-                 ) NOT NULL DEFAULT 'submitted'"
+                'ALTER TABLE `student_submissions` MODIFY COLUMN `status` ENUM('
+                . stage_submission_status_enum_definition($statusType)
+                . ") NOT NULL DEFAULT 'submitted'"
             );
         }
         if (!isset($indexes['student_submissions']['idx_student_submissions_project_stage'])) {
+            stage_submission_set_migration_operation('add_student_submissions_stage_index');
             $pdo->exec(
                 'ALTER TABLE `student_submissions`
                  ADD KEY `idx_student_submissions_project_stage` (`project_id`,`stage`,`id`)'
@@ -136,16 +176,19 @@ function ensure_stage_submission_schema(PDO $pdo): void
             'proposal_revision_accepted_submission_id' => 'INT NULL DEFAULT NULL',
         ] as $column => $definition) {
             if (!isset($columns['projects'][$column])) {
+                stage_submission_set_migration_operation('add_projects_' . $column);
                 $pdo->exec("ALTER TABLE `projects` ADD COLUMN `$column` $definition");
             }
         }
         if (!isset($columns['evaluations_project']['proposal_submission_id'])) {
+            stage_submission_set_migration_operation('add_evaluations_project_submission_link');
             $pdo->exec(
                 'ALTER TABLE `evaluations_project`
                  ADD COLUMN `proposal_submission_id` INT NULL DEFAULT NULL'
             );
         }
 
+        stage_submission_set_migration_operation('backfill_proposal_evaluation_submission_links');
         $pdo->exec(
             "UPDATE `evaluations_project` e
              INNER JOIN `student_submissions` s ON s.id = (
@@ -160,6 +203,7 @@ function ensure_stage_submission_schema(PDO $pdo): void
              SET e.proposal_submission_id = s.id
              WHERE e.proposal_status = 'submitted' AND e.proposal_submission_id IS NULL"
         );
+        stage_submission_set_migration_operation('backfill_proposal_verdict_submission_links');
         $pdo->exec(
             "UPDATE `projects` p
              SET p.proposal_verdict_submission_id = (
@@ -173,27 +217,32 @@ function ensure_stage_submission_schema(PDO $pdo): void
         );
 
         if (!isset($columns['e3_evaluations']['final_submission_id'])) {
+            stage_submission_set_migration_operation('add_e3_evaluation_submission_link');
             $pdo->exec(
                 'ALTER TABLE `e3_evaluations`
                  ADD COLUMN `final_submission_id` INT NULL DEFAULT NULL'
             );
         }
         if (isset($indexes['e3_evaluations']['uniq_e3_evaluation_project_evaluator'])) {
+            stage_submission_set_migration_operation('drop_legacy_e3_evaluation_unique_index');
             $pdo->exec('ALTER TABLE `e3_evaluations` DROP INDEX `uniq_e3_evaluation_project_evaluator`');
         }
         if (!isset($indexes['e3_evaluations']['uniq_e3_evaluation_submission_evaluator'])) {
+            stage_submission_set_migration_operation('add_stage_specific_e3_evaluation_unique_index');
             $pdo->exec(
                 'ALTER TABLE `e3_evaluations`
                  ADD UNIQUE KEY `uniq_e3_evaluation_submission_evaluator` (`project_id`,`evaluator_id`,`final_submission_id`)'
             );
         }
         if (!isset($columns['e3_final_verdicts']['final_submission_id'])) {
+            stage_submission_set_migration_operation('add_e3_verdict_submission_link');
             $pdo->exec(
                 'ALTER TABLE `e3_final_verdicts`
                  ADD COLUMN `final_submission_id` INT NULL DEFAULT NULL'
             );
         }
 
+        stage_submission_set_migration_operation('create_stage_verdict_history');
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS `stage_verdict_history` (
               `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -212,6 +261,7 @@ function ensure_stage_submission_schema(PDO $pdo): void
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
+        stage_submission_set_migration_operation('verify_migration_019_schema');
         if (!stage_submission_schema_is_ready(stage_submission_schema_state($pdo))) {
             throw new RuntimeException('The stage submission schema is still incomplete after migration.');
         }

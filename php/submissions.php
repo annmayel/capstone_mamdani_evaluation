@@ -1,14 +1,25 @@
 <?php
 
-if (isset($pdo) && $pdo instanceof PDO) {
-    try {
-        require_once __DIR__ . '/stage_submission_migration.php';
-        ensure_stage_submission_schema($pdo);
-    } catch (Throwable $schemaError) {
-        error_log('[STAGE SUBMISSION SCHEMA ERROR] ' . $schemaError->getMessage());
-        http_response_code(503);
-        exit('The paper submission database update could not be completed. Please contact the system administrator.');
+function log_workflow_database_error(string $stage, string $operation, Throwable $error, ?string $migration = null): void
+{
+    $databaseError = $error;
+    while ($databaseError && !($databaseError instanceof PDOException)) {
+        $databaseError = $databaseError->getPrevious();
     }
+    $errorInfo = $databaseError instanceof PDOException ? $databaseError->errorInfo : null;
+    $sqlState = (string) ($errorInfo[0] ?? $error->getCode());
+    $driverCode = (string) ($errorInfo[1] ?? '');
+    $route = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?: 'unknown';
+    error_log(sprintf(
+        '[WORKFLOW DATABASE ERROR] stage=%s operation=%s migration=%s sqlstate=%s driver_code=%s route=%s message=%s',
+        $stage,
+        $operation,
+        $migration ?? 'none',
+        $sqlState,
+        $driverCode,
+        $route,
+        $error->getMessage()
+    ));
 }
 
 function latest_stage_submission(PDO $pdo, int $projectId, string $stage): ?array

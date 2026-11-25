@@ -14,7 +14,7 @@ $finalSubmission=latest_stage_submission($pdo,$projectId,'final');
 $finalPdf=$finalSubmission&&!empty($finalSubmission['stored_filename'])
     ? dirname(__DIR__).DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'submissions'.DIRECTORY_SEPARATOR.$finalSubmission['stored_filename']
     : '';
-if(!$finalSubmission||!in_array($finalSubmission['status'],['submitted','under_evaluation'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
+if(!$finalSubmission||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
  header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_submitted');exit;
 }
 if($finalSubmission['status']==='submitted'){
@@ -23,6 +23,11 @@ if($finalSubmission['status']==='submitted'){
 }
 $criteria=e3_criteria();$errors=[];$success='';
 $existingStmt=$pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');$existingStmt->execute([$projectId,$evaluatorId,(int)$finalSubmission['id']]);$existing=$existingStmt->fetch(PDO::FETCH_ASSOC)?:null;
+$panelResult=e3_consolidated($pdo,$projectId,(int)$finalSubmission['id']);
+$panelRecommendation=$panelResult['calculated_score']===null?null:e3_stage_verdict_from_score((float)$panelResult['calculated_score']);
+$officialStmt=$pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id=? AND final_submission_id=? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
+$officialStmt->execute([$projectId,(int)$finalSubmission['id']]);$officialResult=$officialStmt->fetch(PDO::FETCH_ASSOC)?:null;
+$evaluationLocked=($existing&&$existing['status']==='submitted')||$officialResult!==null;
 $form=$existing?:[];$commentValues=[];
 foreach($criteria as$code=>$criterion){$commentValues[$code]=(string)($form[$criterion['key'].'_comment']??'');}
 if($existing&&trim((string)($existing['revisions']??''))!== ''){
@@ -36,7 +41,8 @@ if(isset($_GET['summary'])&&$_GET['summary']==='1'&&$_SERVER['REQUEST_METHOD']!=
 }
 if($_SERVER['REQUEST_METHOD']==='POST'){
  if(!csrf_check($_POST['csrf']??'')){$errors[]='Your session could not be verified. Refresh the page and try again.';}
- elseif($existing&&$existing['status']==='submitted'){$errors[]='This E3 evaluation has already been submitted and cannot be edited.';}
+  elseif($officialResult){$errors[]='The IT Chairperson has already confirmed the official verdict for this Final Paper.';}
+  elseif($existing&&$existing['status']==='submitted'){$errors[]='This E3 evaluation has already been submitted and cannot be edited.';}
  else{
   foreach($criteria as$code=>$criterion){$key=$criterion['key'];if(array_key_exists($key,$_POST))$form[$key]=(string)$_POST[$key];$commentKey='comment_'.$criterion['key'];$commentValues[$code]=trim((string)($_POST[$commentKey]??''));}
   $form['remarks']=trim((string)($_POST['remarks']??''));$validation=e3_validate_scores($_POST);
@@ -63,7 +69,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $verdictForHistory=e3_stage_verdict_from_score($total);
     $pdo->prepare('INSERT INTO evaluation_history(project_id,evaluator_id,evaluation_type,project_score,paper_score,overall_score,overall_rating) VALUES(?,?,?,?,?,?,?)')->execute([$projectId,$evaluatorId,'e3',$total,$total,$total,$verdictForHistory['label']]);
     $pdo->commit();$_SESSION['e3_flash']='E3 evaluation submitted. Total: '.number_format($total,2).'/100.';header('Location: evaluate_e3.php?project_id='.$projectId);exit;
-   }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();error_log('[e3] '.$e->getMessage());$errors[]='The E3 evaluation could not be saved.';}
+   }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();log_workflow_database_error('e3_evaluation_submit','save_evaluator_scores_and_comments',$e);$errors[]='The E3 evaluation could not be saved.';}
   }
  }
 }
@@ -88,21 +94,29 @@ $verdict=!$currentValidation['errors']?e3_stage_verdict_from_score($rawTotal):nu
 <a class="selection-back" href="<?=$isSummary?'evaluate_selection.php?project_id='.$projectId:'projects.php'?>">← <?=$isSummary?'Back to Evaluation Type':'Back to Assigned Projects'?></a>
 <header class="main-header e3-header"><div class="main-header-text"><span class="page-eyebrow">Final hearing · CEIT-UR-E3</span><h1><?=$isSummary?'Evaluation Summary':'Final Hearing Evaluation'?></h1><p>PART 1: GRADING RUBRIC — 100 POINTS · <?=esc($finalSubmission['original_filename'])?></p><a class="e3-btn secondary" href="view_submission.php?id=<?=esc($finalSubmission['id'])?>&amp;stage=final" target="_blank" rel="noopener">Open Final Paper PDF</a></div></header>
 <?php if($success):?><div class="e3-alert success"><?=esc($success)?></div><?php endif;if($errors):?><div class="e3-alert error"><strong>Please review:</strong><ul><?php foreach(array_unique($errors)as$error):?><li><?=esc($error)?></li><?php endforeach;?></ul></div><?php endif;?>
+<section class="project-info-card e3-panel-result"><div class="project-image"><span>E3 RESULT</span></div><dl>
+<div><dt>Panel evaluations submitted</dt><dd><?=esc($panelResult['evaluator_count'])?></dd></div>
+<div><dt>Panel score</dt><dd><?=$panelResult['calculated_score']===null?'Pending':number_format((float)$panelResult['calculated_score'],2).' / 100'?></dd></div>
+<div><dt>Recommended verdict</dt><dd><?=esc($panelRecommendation['label']??'Pending evaluator submissions')?></dd></div>
+<div><dt>Mamdani fuzzy output</dt><dd><?=$panelRecommendation?number_format((float)$panelRecommendation['fuzzy']['defuzz'],2).' / 100':'Pending'?></dd></div>
+<div><dt>Official verdict</dt><dd><?=esc($officialResult['verdict_label']??'Pending IT Chairperson confirmation')?></dd></div>
+<?php if($officialResult&&!empty($officialResult['revisions'])):?><div><dt>Chairperson required revisions</dt><dd><?=nl2br(esc($officialResult['revisions']))?></dd></div><?php endif;?>
+</dl></section>
 <?php if(!$isSummary):?>
 <section class="project-info-card"><div class="project-image"><span>CAPSTONE</span></div><dl><div><dt>Program</dt><dd><?=esc($project['academic_year']?('BS Information Technology · '.$project['academic_year']):'BS Information Technology')?></dd></div><div><dt>Date and Time</dt><dd><?php if(!empty($project['defense_time'])): ?><?=esc(date('M j, Y',strtotime($project['defense_date'])) . ' · ' . $project['defense_time'])?><?php elseif(!empty($project['defense_date'])): ?><?=esc(date('M j, Y',strtotime($project['defense_date'])))?><?php else: ?>Not set<?php endif; ?></dd></div><div><dt>Thesis / Capstone Title</dt><dd><?=esc($project['title'])?></dd></div><div><dt>Proponents</dt><dd><?=esc(!empty($project['members'])?$project['members']:($project['group_name']?:'Not set'))?></dd></div><div><dt>Adviser</dt><dd><?=esc($project['adviser']?:'Not assigned')?></dd></div><div><dt>Panel Member Evaluating</dt><dd><?=esc($name)?></dd></div></dl></section>
 <form method="post" class="rubric-form"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="flow" value="summary">
 <?php $last='';foreach($criteria as$code=>$criterion):if($last!==$criterion['category']):$last=$criterion['category'];?><h2 class="rubric-category"><?=esc($criterion['category'])?></h2><?php endif;?>
-<section class="rubric-row"><div class="rubric-code"><?=esc($code)?></div><div class="rubric-copy"><h3><?=esc($criterion['label'])?></h3><p><?=esc($criterion['description'])?></p></div><label class="rubric-score"><span>Score · max <?=esc($criterion['maximum'])?></span><input type="number" name="<?=esc($criterion['key'])?>" min="0" max="<?=esc($criterion['maximum'])?>" step="0.01" value="<?=esc($fieldValue($criterion['key']))?>" <?=($existing&&$existing['status']==='submitted')?'disabled':'required'?>></label><label class="rubric-comment"><span>Comment</span><textarea name="comment_<?=esc($criterion['key'])?>" rows="3" placeholder="Add criterion comment" <?=($existing&&$existing['status']==='submitted')?'disabled':''?>><?=esc($commentValues[$code])?></textarea></label></section>
+<section class="rubric-row"><div class="rubric-code"><?=esc($code)?></div><div class="rubric-copy"><h3><?=esc($criterion['label'])?></h3><p><?=esc($criterion['description'])?></p></div><label class="rubric-score"><span>Score · max <?=esc($criterion['maximum'])?></span><input type="number" name="<?=esc($criterion['key'])?>" min="0" max="<?=esc($criterion['maximum'])?>" step="0.01" value="<?=esc($fieldValue($criterion['key']))?>" <?=$evaluationLocked?'disabled':'required'?>></label><label class="rubric-comment"><span>Comment</span><textarea name="comment_<?=esc($criterion['key'])?>" rows="3" placeholder="Add criterion comment" <?=$evaluationLocked?'disabled':''?>><?=esc($commentValues[$code])?></textarea></label></section>
 <?php endforeach;?>
-<label class="rubric-general"><span>Revisions, comments and recommendations</span><textarea name="remarks" rows="5" <?=($existing&&$existing['status']==='submitted')?'disabled':''?>><?=esc($fieldValue('remarks'))?></textarea></label>
-<div class="rubric-footer"><div class="rubric-total"><span>Total Raw Score</span><strong id="e3-total"><?=number_format($rawTotal,2)?><small>/100</small></strong></div><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_selection.php?project_id=<?=$projectId?>">Cancel</a><button class="e3-btn primary" type="submit">Review Summary</button></div></div></form>
+<label class="rubric-general"><span>Revisions, comments and recommendations</span><textarea name="remarks" rows="5" <?=$evaluationLocked?'disabled':''?>><?=esc($fieldValue('remarks'))?></textarea></label>
+<div class="rubric-footer"><div class="rubric-total"><span>Total Raw Score</span><strong id="e3-total"><?=number_format($rawTotal,2)?><small>/100</small></strong></div><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_selection.php?project_id=<?=$projectId?>">Cancel</a><?php if(!$evaluationLocked):?><button class="e3-btn primary" type="submit">Review Summary</button><?php else:?><strong class="e3-locked-message">Evaluation is locked</strong><?php endif;?></div></div></form>
 <?php else:?>
 <section class="summary-layout"><div class="summary-breakdown"><h2>Score Breakdown</h2><?php foreach($categoryTotals as$cat=>$max):?><div class="breakdown-row"><div><span><?=esc($cat)?></span><small>Max <?= $max ?> points</small></div><strong><?=number_format($categoryScores[$cat]??0,2)?> <small>/ <?= $max ?></small></strong></div><div class="breakdown-track"><i style="width:<?= $max?min(100,(($categoryScores[$cat]??0)/$max)*100):0?>%"></i></div><?php endforeach;?><div class="raw-score-card"><span>Total Raw Score</span><strong><?=number_format($rawTotal,2)?> <small>/ 100</small></strong></div></div>
 <aside class="mamdani-card"><span class="summary-label">Mamdani Result</span><strong><?=esc($trace?$trace['defuzz']:($verdict?$rawTotal:'0.00'))?><small>/100</small></strong><p><?=esc($trace?$trace['rating']:($verdict?$verdict['label']:''))?></p></aside></section>
 <section class="final-verdict <?=$verdict&&str_starts_with($verdict['label'],'PASSED')?'passing':''?>"><span>Final Verdict</span><strong><?=esc($verdict?$verdict['label']:'Pending')?></strong><p><?=esc($verdict?$verdict['description']:'Complete the rubric to generate a verdict.')?></p></section>
 <section class="revision-summary"><h2>Revisions / Comments by Criterion</h2><?php $hasComment=false;foreach($criteria as$code=>$criterion):if($commentValues[$code]!==''){$hasComment=true;}endforeach; if(!$hasComment):?><p class="muted-comment">No individual criterion comments were added.</p><?php else:foreach($criteria as$code=>$criterion):if($commentValues[$code]!==''):?><article><span><?=esc($code)?></span><div><h3><?=esc($criterion['label'])?></h3><p><?=esc($commentValues[$code])?></p></div></article><?php endif;endforeach;endif;?></section>
 <form method="post" class="summary-submit"><input type="hidden" name="csrf" value="<?=esc(csrf_token())?>"><input type="hidden" name="flow" value="submit">
-<?php foreach($criteria as$code=>$criterion):?><input type="hidden" name="<?=esc($criterion['key'])?>" value="<?=esc($fieldValue($criterion['key']))?>"><input type="hidden" name="comment_<?=esc($criterion['key'])?>" value="<?=esc($commentValues[$code])?>"><?php endforeach;?> <input type="hidden" name="remarks" value="<?=esc($fieldValue('remarks'))?>"><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_e3.php?project_id=<?=$projectId?>">Back</a><button class="e3-btn primary" type="submit">Submit Evaluation</button></div></form>
+<?php foreach($criteria as$code=>$criterion):?><input type="hidden" name="<?=esc($criterion['key'])?>" value="<?=esc($fieldValue($criterion['key']))?>"><input type="hidden" name="comment_<?=esc($criterion['key'])?>" value="<?=esc($commentValues[$code])?>"><?php endforeach;?> <input type="hidden" name="remarks" value="<?=esc($fieldValue('remarks'))?>"><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_e3.php?project_id=<?=$projectId?>">Back</a><?php if(!$evaluationLocked):?><button class="e3-btn primary" type="submit">Submit Evaluation</button><?php else:?><strong class="e3-locked-message">Evaluation is locked</strong><?php endif;?></div></form>
 <?php endif;?>
 </main></div>
 <script src="evaluator-content.js?v=20261124" defer></script>

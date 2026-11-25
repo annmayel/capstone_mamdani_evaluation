@@ -1,0 +1,180 @@
+.e3-verdict-main .evaluation-content {
+  max-width: 1440px;
+}
+
+.e3-verdict-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.e3-verdict-summary article {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid #e5e9f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.e3-verdict-summary span,
+.e3-verdict-table td small {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.e3-verdict-summary strong {
+  color: #162a4a;
+  font-size: 24px;
+}
+
+.e3-verdict-filters {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.5fr) repeat(3, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.e3-verdict-filters label {
+  display: grid;
+  gap: 7px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.e3-verdict-filters input,
+.e3-verdict-filters select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #172554;
+  font: inherit;
+}
+
+.e3-verdict-filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.e3-verdict-table-wrap {
+  overflow-x: auto;
+}
+
+.e3-verdict-table {
+  min-width: 1100px;
+}
+
+.e3-verdict-table td {
+  vertical-align: top;
+}
+
+.e3-verdict-table td strong,
+.e3-verdict-table td small {
+  display: block;
+}
+
+.e3-verdict-table td small {
+  margin-top: 4px;
+}
+
+.e3-verdict-row-actions {
+  display: grid;
+  gap: 7px;
+  min-width: 130px;
+}
+
+.e3-verdict-row-actions .btn {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.e3-status-pill {
+  display: inline-block;
+  max-width: 200px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.e3-status-pill.confirmed {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.e3-verdict-evaluator-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.e3-verdict-evaluator {
+  padding: 16px;
+  border: 1px solid #e5e9f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.e3-verdict-evaluator > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.e3-verdict-evaluator > header small,
+.e3-verdict-evaluator-scores small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  white-space: pre-wrap;
+}
+
+.e3-verdict-evaluator-scores {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.e3-verdict-evaluator-scores > div {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.e3-verdict-evaluator-scores span {
+  display: block;
+  margin-bottom: 6px;
+  color: #475569;
+  font-size: 13px;
+}
+
+@media (max-width: 1000px) {
+  .e3-verdict-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .e3-verdict-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .e3-verdict-evaluator-scores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .e3-verdict-summary,
+  .e3-verdict-filters,
+  .e3-verdict-evaluator-scores {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/e3.php';
+require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/student_auth.php';
 $user = require_verified_student($pdo);
 $verificationSuccess = (string) ($_SESSION['verification_success'] ?? '');
@@ -118,8 +119,24 @@ $project = $stmt->fetch(PDO::FETCH_ASSOC);
 $project = $project ?: null;
 if ($view === 'results' && $project) {
     try {
-        $e3PublishedStmt = $pdo->prepare('SELECT published_at FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL LIMIT 1');
-        $e3PublishedStmt->execute([(int) $project['id']]);
+        $e3PublishedStmt = $pdo->prepare(
+            'SELECT v.published_at
+             FROM e3_final_verdicts v
+             WHERE v.project_id = ? AND v.published_at IS NOT NULL
+               AND (
+                 (v.final_submission_id IS NOT NULL AND EXISTS (
+                   SELECT 1 FROM student_submissions s
+                   WHERE s.id = v.final_submission_id AND s.project_id = v.project_id
+                     AND s.student_id = ? AND s.stage = \'final\'
+                 ))
+                 OR (v.final_submission_id IS NULL AND NOT EXISTS (
+                   SELECT 1 FROM student_submissions s
+                   WHERE s.project_id = v.project_id AND s.student_id = ? AND s.stage = \'final\'
+                 ))
+               )
+             LIMIT 1'
+        );
+        $e3PublishedStmt->execute([(int) $project['id'], $uid, $uid]);
         if ($e3PublishedStmt->fetchColumn()) {
             header('Location: e3_result.php');
             exit;
@@ -148,6 +165,10 @@ if ($project) {
 $projectEvaluation = null;
 $paperEvaluation = null;
 $projectFeedback = [];
+$proposalEvaluations = [];
+$proposalCriterionAverages = [];
+$proposalPanelTotal = null;
+$proposalPanelPercentage = null;
 $paperFeedback = [];
 $feedbackRows = [];
 $verdictStrengths = [];
@@ -162,6 +183,33 @@ $criteria = [
 if ($project) {
     $stmt = $pdo->prepare('SELECT * FROM evaluations_project WHERE project_id = ? ORDER BY id DESC LIMIT 1');
     $stmt->execute([(int) $project['id']]); $projectEvaluation = $stmt->fetch(PDO::FETCH_ASSOC);
+    $proposalCriteria = proposal_criteria();
+    $proposalColumns = array_column($proposalCriteria, 'key');
+    $proposalCommentColumns = array_column($proposalCriteria, 'comment_key');
+    $proposalRequiredFields = array_merge($proposalColumns, $proposalCommentColumns);
+    $proposalSelectFields = implode(', ', array_map(static fn($field) => 'e.' . $field, $proposalRequiredFields));
+    $proposalCompleteCondition = implode(' AND ', array_map(static fn($field) => 'e.' . $field . ' IS NOT NULL', $proposalColumns));
+    $proposalStmt = $pdo->prepare(
+        'SELECT ' . $proposalSelectFields . ', e.total_score, e.remarks, e.created_at, u.full_name AS evaluator_name
+         FROM evaluations_project e LEFT JOIN users u ON u.id=e.evaluator_id
+         WHERE e.project_id=? AND e.proposal_status=? AND ' . $proposalCompleteCondition . '
+         ORDER BY e.created_at DESC, e.id DESC'
+    );
+    $proposalStmt->execute([(int) $project['id'], 'submitted']);
+    $proposalEvaluations = $proposalStmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($proposalEvaluations) {
+        $proposalCriterionAverages = array_fill_keys(array_keys($proposalCriteria), 0.0);
+        foreach ($proposalEvaluations as $proposalEvaluation) {
+            foreach ($proposalCriteria as $criterionKey => $criterion) {
+                $proposalCriterionAverages[$criterionKey] += (float) $proposalEvaluation[$criterion['key']];
+            }
+        }
+        foreach ($proposalCriterionAverages as $criterionKey => $sum) {
+            $proposalCriterionAverages[$criterionKey] = round($sum / count($proposalEvaluations), 2);
+        }
+        $proposalPanelTotal = round(array_sum($proposalCriterionAverages), 2);
+        $proposalPanelPercentage = round(($proposalPanelTotal / 120) * 100, 2);
+    }
     $stmt = $pdo->prepare('SELECT * FROM evaluations_paper WHERE project_id = ? ORDER BY id DESC LIMIT 1');
     $stmt->execute([(int) $project['id']]); $paperEvaluation = $stmt->fetch(PDO::FETCH_ASSOC);
     $stmt = $pdo->prepare('SELECT remarks, evaluator_id, created_at, total_score FROM evaluations_project WHERE project_id = ? AND remarks <> "" ORDER BY id DESC');
@@ -679,7 +727,7 @@ $steps = [['Proposal submitted', $latestSubmission ? $formatDate($latestSubmissi
 $uploadMessages = ['uploaded' => 'Proposal submitted successfully.', 'invalid_pdf' => 'Only valid PDF files up to 10 MB are accepted.', 'upload_failed' => 'The proposal upload failed. Please try again.', 'storage_failed' => 'The proposal could not be saved. Please contact the administrator.', 'save_failed' => 'The proposal could not be recorded. Please contact the administrator.', 'no_project' => 'A project record is required before submitting a proposal.', 'invalid_request' => 'The submission request could not be verified.'];
 $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '');
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?=esc(ucfirst($view))?> - Capstone Evaluation System - Student Portal</title><link rel="stylesheet" href="../assets/style.css?v=20261114-otp"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?=esc(ucfirst($view))?> - Capstone Evaluation System - Student Portal</title><link rel="stylesheet" href="../assets/style.css?v=20261114-otp"><link rel="stylesheet" href="proposal-results.css?v=20261124"><link rel="icon" type="image/png" href="../favicon.png?v=20261016"></head>
 <body class="student-portal"><div class="student-shell">
 <?php require __DIR__ . '/sidebar.php'; ?>
 <main class="student-main"><header class="student-topbar"><div><span class="eyebrow">CAPSTONE EVALUATION SYSTEM</span><strong>Student Portal</strong></div><div class="student-account"><span class="student-avatar"><?=esc($initial)?></span><span><strong><?=esc($displayName)?></strong><small>Student</small></span></div></header><div class="student-content">
@@ -1070,6 +1118,27 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
         </article>
       </div>
     </section>
+  </section>
+<?php endif; ?>
+<?php if ($view === 'results' && $project): ?>
+  <section class="portal-panel proposal-student-result">
+    <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Official Proposal Result</h3></div><?php if ($proposalPanelPercentage !== null): ?><strong class="panel-score"><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage), 2)?>%</strong><?php endif; ?></div>
+    <?php if ($proposalPanelPercentage === null): ?>
+      <div class="empty-state">No complete proposal rubric has been submitted yet.</div>
+    <?php else: ?>
+      <?php $proposalIsConfirmed = !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']); ?>
+      <div class="detail-grid"><div><small>Panel Total Score</small><strong><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage) * 1.2, 2)?> / 120</strong></div><div><small>Percentage</small><strong><?=number_format((float) ($project['proposal_official_score'] ?? $proposalPanelPercentage), 2)?>%</strong></div><div><small><?=($proposalIsConfirmed ? 'Official Verdict' : 'Recommended Verdict')?></small><strong><?=esc($proposalIsConfirmed ? $project['proposal_official_verdict'] : proposal_verdict_from_score($proposalPanelPercentage)['label'])?></strong></div><div><small>Chairperson Review</small><strong><?=($proposalIsConfirmed ? 'Confirmed' : 'Pending confirmation')?></strong></div></div>
+      <?php if ($proposalIsConfirmed && !empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Required Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+      <?php if ($proposalIsConfirmed && !empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson Comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
+      <h4>Proposal Criteria and Evaluator Feedback</h4>
+      <?php foreach (proposal_criteria() as $criterionKey => $criterion): ?>
+        <article class="proposal-student-criterion"><div><strong><?=esc($criterion['label'])?></strong><small>Panel average: <?=number_format((float) ($proposalCriterionAverages[$criterionKey] ?? 0), 2)?> / <?=esc($criterion['maximum'])?></small></div>
+          <?php $hasCriterionFeedback = false; foreach ($proposalEvaluations as $proposalEvaluation): $criterionComment = trim((string) ($proposalEvaluation[$criterion['comment_key']] ?? '')); if ($criterionComment !== ''): $hasCriterionFeedback = true; ?><p><strong><?=esc($proposalEvaluation['evaluator_name'] ?: 'Evaluator')?>:</strong> <?=nl2br(esc($criterionComment))?></p><?php endif; endforeach; ?>
+          <?php if (!$hasCriterionFeedback): ?><p class="muted-comment">No criterion-specific comment was recorded.</p><?php endif; ?>
+        </article>
+      <?php endforeach; ?>
+      <?php foreach ($proposalEvaluations as $proposalEvaluation): if (trim((string) ($proposalEvaluation['remarks'] ?? '')) !== ''): ?><div class="proposal-student-revisions"><strong><?=esc($proposalEvaluation['evaluator_name'] ?: 'Evaluator')?> · Overall Recommendations</strong><p><?=nl2br(esc($proposalEvaluation['remarks']))?></p></div><?php endif; endforeach; ?>
+    <?php endif; ?>
   </section>
 <?php endif; ?>
 </div></main></div></body></html>

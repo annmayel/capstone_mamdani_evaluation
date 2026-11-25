@@ -1,0 +1,10 @@
+.proposal-student-result{margin-top:20px}
+.proposal-student-result>h4{margin:18px 0 8px;color:#294746;font-size:12px}
+.proposal-student-criterion{padding:10px 0;border-top:1px solid #e9efec}
+.proposal-student-criterion>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px}
+.proposal-student-criterion>div strong{color:#294746;font-size:11px}
+.proposal-student-criterion>div small{color:#607a78;font-size:10px}
+.proposal-student-criterion p,.proposal-student-revisions p{margin:6px 0 0;color:#627777;font-size:10px;line-height:1.55}
+.proposal-student-criterion p strong,.proposal-student-revisions strong{color:#315958}
+.proposal-student-revisions{margin-top:10px;padding:10px 12px;border-left:3px solid #65a69a;border-radius:4px;background:#f0f7f5}
+.proposal-student-revisions>strong{font-size:10px}

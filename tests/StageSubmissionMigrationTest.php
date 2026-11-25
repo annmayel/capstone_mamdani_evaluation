@@ -2,6 +2,7 @@
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../php/stage_submission_migration.php';
+require_once __DIR__ . '/../php/evaluation_feedback_migration.php';
 
 final class StageSubmissionMigrationTest extends TestCase
 {
@@ -32,5 +33,50 @@ final class StageSubmissionMigrationTest extends TestCase
 
         unset($state['columns']['student_submissions']['stage']);
         self::assertFalse(stage_submission_schema_is_ready($state));
+    }
+
+    public function testStatusMigrationPreservesExistingEnumValues(): void
+    {
+        $definition = stage_submission_status_enum_definition(
+            "enum('submitted','under_evaluation','evaluated','revision_requested','custom_status')"
+        );
+
+        self::assertStringContainsString("'custom_status'", $definition);
+        self::assertStringContainsString("'revision_required'", $definition);
+        self::assertStringContainsString("'approved'", $definition);
+        self::assertStringContainsString("'accepted'", $definition);
+    }
+
+    public function testEvaluationFeedbackSchemaRequiresSubmissionAndEvaluationLinks(): void
+    {
+        $columns = array_fill_keys([
+            'id',
+            'project_id',
+            'submission_id',
+            'evaluator_id',
+            'evaluation_type',
+            'stage',
+            'evaluation_id',
+            'score',
+            'strengths',
+            'weaknesses',
+            'recommendations',
+            'required_revisions',
+            'remarks',
+            'created_at',
+            'updated_at',
+        ], true);
+        $indexes = array_fill_keys([
+            'idx_evaluation_feedback_project',
+            'idx_evaluation_feedback_evaluator',
+            'idx_evaluation_feedback_created',
+            'idx_evaluation_feedback_submission',
+            'idx_evaluation_feedback_evaluation',
+        ], true);
+
+        self::assertTrue(evaluation_feedback_schema_is_ready(['columns' => $columns, 'indexes' => $indexes]));
+
+        unset($columns['submission_id']);
+        self::assertFalse(evaluation_feedback_schema_is_ready(['columns' => $columns, 'indexes' => $indexes]));
     }
 }
