@@ -3,8 +3,15 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/proposal_scoring_migration.php';
 require_once __DIR__ . '/../php/student_auth.php';
 $user = require_verified_student($pdo);
+$proposalScoringSchema = proposal_scoring_schema_state($pdo);
+if (!proposal_scoring_schema_is_ready($proposalScoringSchema)) {
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Proposal evaluation data is not ready. Run php /var/www/html/bin/migrate_workflow_schema.php from the Railway application shell, then reload this page.');
+}
 $verificationSuccess = (string) ($_SESSION['verification_success'] ?? '');
 unset($_SESSION['verification_success']);
 $uid = (int) $user['id'];
