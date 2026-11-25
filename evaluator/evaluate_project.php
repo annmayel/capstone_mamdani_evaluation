@@ -13,11 +13,9 @@ $stmt->execute([$projectId, $evaluatorId]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 
-$submission = latest_stage_submission($pdo, $projectId, 'proposal');
-if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId
-    || (int) ($submission['student_id'] ?? 0) !== (int) ($project['student_id'] ?? 0)
-    || empty($submission['stored_filename'])
-    || !is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename'])) {
+$submission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
+if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId) {
+    error_log('[proposal evaluation] No usable proposal PDF for assigned project ' . $projectId . '.');
     header('Location: projects.php?evaluation_error=proposal_not_submitted');
     exit;
 }

@@ -14,7 +14,7 @@ $finalSubmission=latest_stage_submission($pdo,$projectId,'final');
 $finalPdf=$finalSubmission&&!empty($finalSubmission['stored_filename'])
     ? dirname(__DIR__).DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'submissions'.DIRECTORY_SEPARATOR.$finalSubmission['stored_filename']
     : '';
-if(!$finalSubmission||(int)($finalSubmission['project_id']??0)!==$projectId||(int)($finalSubmission['student_id']??0)!==(int)($project['student_id']??0)||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
+if(!$finalSubmission||(int)($finalSubmission['project_id']??0)!==$projectId||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
  header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_submitted');exit;
 }
 if($finalSubmission['status']==='submitted'){

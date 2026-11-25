@@ -38,6 +38,40 @@ function latest_stage_submission(PDO $pdo, int $projectId, string $stage): ?arra
     return $submission ?: null;
 }
 
+/**
+ * Return the newest usable uploaded PDF for one project stage.  The project
+ * foreign key is the workflow relationship used when a student submits a
+ * paper; do not infer ownership by comparing a legacy projects.student_id
+ * value, which may be NULL on older assigned projects.
+ */
+function latest_stored_pdf_stage_submission(PDO $pdo, int $projectId, string $stage): ?array
+{
+    if (!in_array($stage, ['proposal', 'final'], true)) {
+        throw new InvalidArgumentException('Unknown submission stage.');
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT * FROM student_submissions
+         WHERE project_id = ? AND stage = ?
+           AND stored_filename IS NOT NULL AND stored_filename <> ''
+         ORDER BY id DESC"
+    );
+    $stmt->execute([$projectId, $stage]);
+    $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
+
+    while ($submission = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $filename = (string) ($submission['stored_filename'] ?? '');
+        if ($filename === '' || basename($filename) !== $filename) {
+            continue;
+        }
+        if (is_file($storage . $filename)) {
+            return $submission;
+        }
+    }
+
+    return null;
+}
+
 function proposal_allows_final_submission(array $project, ?array $proposalSubmission): bool
 {
     if (empty($project['proposal_confirmed_at']) || empty($project['proposal_official_verdict'])) {

@@ -14,17 +14,13 @@ $finalSubmission = null;
 $proposalReady = false;
 $finalReady = false;
 try {
-    $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
+    $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
     $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
     $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
     $proposalReady = $proposalSubmission
-        && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId
-        && (int) ($proposalSubmission['student_id'] ?? 0) === (int) ($project['student_id'] ?? 0)
-        && !empty($proposalSubmission['stored_filename'])
-        && is_file($storage . $proposalSubmission['stored_filename']);
+        && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
     $finalReady = $finalSubmission
         && (int) ($finalSubmission['project_id'] ?? 0) === $projectId
-        && (int) ($finalSubmission['student_id'] ?? 0) === (int) ($project['student_id'] ?? 0)
         && in_array($finalSubmission['status'], ['submitted', 'under_evaluation'], true)
         && !empty($finalSubmission['stored_filename'])
         && is_file($storage . $finalSubmission['stored_filename'])
