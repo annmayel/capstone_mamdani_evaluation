@@ -14,38 +14,60 @@ $stmt->execute([$projectId, $evaluatorId]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 
-$submission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
+$schemaReady = proposal_evaluation_schema_available($pdo);
+if (!$schemaReady) { http_response_code(503); exit('The CEIT-T07A proposal evaluation schema is not installed. Apply sql/migrations/021_ceit_t07a_proposal_evaluations.sql before using this workspace.'); }
+$latestSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
+$submission = $latestSubmission;
+if ($requestedSubmissionId > 0 && (!$latestSubmission || (int) $latestSubmission['id'] !== $requestedSubmissionId)) {
+    // A submitted evaluator may revisit the exact proposal revision that was
+    // scored, even when the student has uploaded a newer revision since then.
+    $submissionStmt = $pdo->prepare(
+        "SELECT * FROM student_submissions
+         WHERE id = ? AND project_id = ? AND stage = 'proposal'
+           AND stored_filename IS NOT NULL AND stored_filename <> ''
+         LIMIT 1"
+    );
+    $submissionStmt->execute([$requestedSubmissionId, $projectId]);
+    $candidate = $submissionStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $candidateFilename = (string) ($candidate['stored_filename'] ?? '');
+    $submittedEvaluationStmt = $pdo->prepare(
+        "SELECT 1 FROM proposal_evaluations
+         WHERE project_id = ? AND proposal_submission_id = ? AND evaluator_id = ? AND status = 'submitted'
+         LIMIT 1"
+    );
+    $submittedEvaluationStmt->execute([$projectId, $requestedSubmissionId, $evaluatorId]);
+    if ($candidate && basename($candidateFilename) === $candidateFilename
+        && str_ends_with(strtolower($candidateFilename), '.pdf')
+        && $submittedEvaluationStmt->fetchColumn()) {
+        $submission = $candidate;
+    }
+}
 if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId
     || ($requestedSubmissionId > 0 && (int) $submission['id'] !== $requestedSubmissionId)) {
     error_log('[proposal evaluation] No uploaded proposal PDF record for assigned project ' . $projectId . '.');
     header('Location: evaluate_selection.php?project_id=' . $projectId . '&evaluation_error=proposal_not_submitted');
     exit;
 }
-$schemaReady = proposal_evaluation_schema_available($pdo);
-if (!$schemaReady) { http_response_code(503); exit('The CEIT-T07A proposal evaluation schema is not installed. Apply sql/migrations/021_ceit_t07a_proposal_evaluations.sql before using this workspace.'); }
-if ($submission['status'] === 'submitted') {
-    $pdo->prepare("UPDATE student_submissions SET status = 'under_evaluation' WHERE id = ? AND status = 'submitted'")->execute([(int) $submission['id']]);
-    $submission['status'] = 'under_evaluation';
-}
 
 $criteria = proposal_criteria();
 $latest = $pdo->prepare('SELECT * FROM proposal_evaluations WHERE project_id=? AND evaluator_id=? AND proposal_submission_id=? ORDER BY id DESC LIMIT 1');
 $latest->execute([$projectId, $evaluatorId, (int) $submission['id']]);
 $existing = $latest->fetch(PDO::FETCH_ASSOC) ?: null;
-$hasRubricScores = $existing && count(array_filter(
-    array_column($criteria, 'key'),
-    static fn($key) => $existing[$key] !== null && $existing[$key] !== ''
-)) === count($criteria);
-$hasProposalData = false;
-if ($existing) {
-    foreach ($criteria as $criterion) {
-        if ($existing[$criterion['key']] !== null || trim((string) ($existing[$criterion['comment_key']] ?? '')) !== '') {
-            $hasProposalData = true;
-            break;
-        }
-    }
+$isLocked = ($existing['status'] ?? 'draft') === 'submitted';
+$isViewingHistoricalSubmission = $latestSubmission && (int) $latestSubmission['id'] !== (int) $submission['id'];
+$submittedAt = $isLocked && !empty($existing['submitted_at'])
+    ? date('M j, Y g:i A', strtotime((string) $existing['submitted_at']))
+    : null;
+if (!$isLocked && !$isViewingHistoricalSubmission && $submission['status'] === 'submitted') {
+    $pdo->prepare("UPDATE student_submissions SET status = 'under_evaluation' WHERE id = ? AND status = 'submitted'")->execute([(int) $submission['id']]);
+    $submission['status'] = 'under_evaluation';
 }
-$isLocked = $hasRubricScores && $hasProposalData && ($existing['status'] ?? 'draft') === 'submitted';
+$panelStatus = null;
+try {
+    $panelStatus = proposal_panel_completion($pdo, $projectId, (int) $submission['id']);
+} catch (PDOException $exception) {
+    error_log('[proposal evaluation] Could not load panel completion: ' . $exception->getMessage());
+}
 $formValues = [];
 $commentValues = [];
 foreach ($criteria as $criterion) {
@@ -170,10 +192,11 @@ $email = trim((string) ($_SESSION['user']['email'] ?? ''));
   <main class="main-content e3-main proposal-evaluation-main">
     <div class="evaluator-topbar"><button class="mobile-menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="evaluator-sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div class="evaluator-topbar-end"><div class="account-avatar"><?=esc(strtoupper(substr($name, 0, 1)))?></div><span><?=esc($name)?></span></div></div>
     <a class="selection-back" href="projects.php">← Back to Evaluation Workspace</a>
-    <header class="main-header proposal-page-header"><div class="main-header-text"><span class="page-eyebrow">Proposal stage · CEIT-T07A</span><h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>Evaluate Submission</h1><p>Evaluate the proposal manuscript and proposed project together using the official rubric.</p></div></header>
+    <header class="main-header proposal-page-header"><div class="main-header-text"><span class="page-eyebrow">Proposal stage · CEIT-T07A</span><h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg><?=$isLocked ? 'View Submitted Evaluation' : 'Evaluate Submission'?></h1><p><?=$isLocked ? 'Review your submitted proposal score sheet and feedback.' : 'Evaluate the proposal manuscript and proposed project together using the official rubric.'?></p></div></header>
     <?php if ($success): ?><div class="e3-alert success" role="status"><?=esc($success)?></div><?php endif; ?>
     <?php if ($errors): ?><div class="e3-alert error" role="alert"><strong>Please review:</strong><ul><?php foreach (array_unique($errors) as $error): ?><li><?=esc($error)?></li><?php endforeach; ?></ul></div><?php endif; ?>
-    <?php if ($isLocked): ?><div class="proposal-submitted-note" role="status">Your proposal evaluation has been submitted. The student will see the completed panel result automatically after every assigned evaluator submits a complete evaluation.</div><?php endif; ?>
+    <?php if ($isLocked): ?><div class="proposal-submitted-note" role="status"><strong>Evaluation Submitted</strong><?php if ($submittedAt): ?> · <?=esc($submittedAt)?><?php endif; ?><br>Your saved score sheet, comments, recommendations, and required revisions are shown below in read-only form. The student will see the completed panel result automatically after every assigned evaluator submits a complete evaluation.</div><?php endif; ?>
+    <?php if ($panelStatus): ?><div class="proposal-submitted-note" role="status"><strong><?=$panelStatus['ready'] ? 'Panel Evaluation Complete' : 'Pending Panel Evaluation'?></strong><br><?php if ($panelStatus['ready']): ?>Every assigned evaluator has submitted a complete proposal evaluation.<?php else: ?><?=esc((string) $panelStatus['submitted_count'])?> of <?=esc((string) $panelStatus['assigned_count'])?> assigned evaluators have submitted complete proposal evaluations.<?php endif; ?></div><?php endif; ?>
 
     <section class="proposal-project-card" aria-label="Project information"><span class="proposal-project-mark" aria-hidden="true">01</span><div><h2><?=esc($project['title'])?></h2><p class="proposal-project-meta"><span><strong>Group:</strong> <?=esc($project['group_name'] ?: 'Not set')?></span><span><strong>Adviser:</strong> <?=esc($project['adviser'] ?: 'Not assigned')?></span><span><strong>Defense date:</strong> <?=!empty($project['defense_date']) ? esc(date('M j, Y', strtotime($project['defense_date']))) : 'Not scheduled'?></span></p></div></section>
     <section class="proposal-submission-package">

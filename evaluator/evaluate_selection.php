@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
@@ -12,6 +13,7 @@ if (!$project) { header('Location: projects.php?evaluation_error=not_assigned');
 $proposalSubmission = null;
 $finalSubmission = null;
 $proposalReady = false;
+$proposalSubmitted = false;
 $finalReady = false;
 try {
     $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
@@ -19,6 +21,13 @@ try {
     $finalPdf = $finalSubmission ? submission_pdf_path((string) ($finalSubmission['stored_filename'] ?? '')) : null;
     $proposalReady = $proposalSubmission
         && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
+    if ($proposalReady && proposal_evaluation_schema_available($pdo)) {
+        $evaluationStmt = $pdo->prepare(
+            'SELECT status FROM proposal_evaluations WHERE project_id = ? AND proposal_submission_id = ? AND evaluator_id = ? ORDER BY id DESC LIMIT 1'
+        );
+        $evaluationStmt->execute([$projectId, (int) $proposalSubmission['id'], $evaluatorId]);
+        $proposalSubmitted = ($evaluationStmt->fetchColumn() === 'submitted');
+    }
     $finalReady = $finalSubmission
         && (int) ($finalSubmission['project_id'] ?? 0) === $projectId
         && in_array($finalSubmission['status'], ['submitted', 'under_evaluation', 'accepted', 'revision_required'], true)
@@ -61,8 +70,8 @@ $email = trim((string) ($user['email'] ?? ''));
     <section class="selection-grid" aria-label="Evaluation type">
       <?php if ($proposalReady): ?><a class="selection-card" href="evaluate_project.php?project_id=<?=$projectId?>&amp;proposal_submission_id=<?=esc($proposalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon proposal-icon" aria-hidden="true"><span>▱</span></div>
-        <div class="selection-card-copy"><span class="selection-label">Proposal stage · <?=esc($proposalStatusLabel)?></span><h2>Proposal Evaluation</h2><p>Record the proposal verdict and comments before project development.</p></div>
-        <span class="selection-action"><?=$proposalReady ? 'Start Proposal Evaluation' : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
+        <div class="selection-card-copy"><span class="selection-label"><?=$proposalSubmitted ? 'Evaluation Submitted' : 'Proposal stage · ' . $proposalStatusLabel?></span><h2>Proposal Evaluation</h2><p><?=$proposalSubmitted ? 'View your submitted CEIT-T07A score sheet and feedback.' : 'Record the proposal verdict and comments before project development.'?></p></div>
+        <span class="selection-action"><?=$proposalReady ? ($proposalSubmitted ? 'View Submitted Evaluation' : 'Start Proposal Evaluation') : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
       <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>
       <?php if ($finalReady): ?><a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon hearing-icon" aria-hidden="true"><span>✓</span></div>
