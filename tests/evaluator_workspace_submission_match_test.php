@@ -1,6 +1,9 @@
 <?php
-require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+
+if (!function_exists('build_fuzzy_trace')) {
+    throw new RuntimeException('Proposal evaluation must load the Mamdani fuzzy engine.');
+}
 
 $pdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

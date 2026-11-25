@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/fuzzy_engine.php';
+
 function proposal_criteria(): array
 {
     return [
