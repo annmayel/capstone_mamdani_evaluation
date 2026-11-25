@@ -42,6 +42,10 @@ $complete = $evaluation && count(array_filter(
 if (!$complete || (int) $evaluation['saved_submission_id'] !== 14) {
     throw new RuntimeException('Workspace did not match the evaluator\'s submitted proposal sheet.');
 }
+$consolidated = proposal_consolidated($pdo, 5, 14);
+if ($consolidated['calculated_score'] === null || empty($consolidated['recommendation']['fuzzy']['defuzz'])) {
+    throw new RuntimeException('Proposal consolidation did not execute the Mamdani fuzzy trace.');
+}
 $panel = proposal_panel_completion($pdo, 5, 14);
 if (!$panel['ready']) {
     throw new RuntimeException('Completed assigned panel was not identified.');
