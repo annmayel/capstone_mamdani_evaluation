@@ -22,7 +22,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
       <li class="nav-section-label">Workspace</li>
       <li><a href="dashboard.php"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-label">Dashboard</span></a></li>
       <li class="nav-section-label">Evaluation</li>
-      <li><a href="projects.php" class="<?=$active === 'projects' ? 'active' : ''?>" <?=$active === 'projects' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">▰</span><span class="nav-label">Evaluation Workspace</span></a></li>
+      <li><a href="projects.php" class="<?=$active === 'projects' ? 'active' : ''?>" <?=$active === 'projects' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h4l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-9zM3.5 9.5h17"/></svg></span><span class="nav-label">Evaluation Workspace</span></a></li>
       <li><a href="evaluation_history.php" class="<?=$active === 'history' ? 'active' : ''?>" <?=$active === 'history' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-label">Evaluation History</span></a></li>
       <li class="nav-section-label">Account</li>
       <li><a href="profile.php" class="<?=$active === 'profile' ? 'active' : ''?>" <?=$active === 'profile' ? 'aria-current="page"' : ''?>><span class="nav-icon" aria-hidden="true">◎</span><span class="nav-label">Profile</span></a></li>
@@ -60,6 +60,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
         <div class="main-header-text"><span class="page-eyebrow">Proposal stage</span><h1>Evaluation Workspace</h1><p>Review each assigned proposal manuscript and proposed project in one official CEIT-T07A evaluation.</p></div>
         <div class="assigned-count"><strong><?=count($projects)?></strong> assigned <?=count($projects) === 1 ? 'submission' : 'submissions'?></div>
       </header>
+      <?php if (($_GET['evaluation_error'] ?? '') === 'proposal_not_submitted'): ?><div class="e3-alert error" role="alert">A valid proposal PDF for this assigned project is not available yet.</div><?php endif; ?>
       <section class="work-panel" aria-labelledby="project-list-title">
         <div class="work-panel-head"><div><h2 id="project-list-title">Assigned Proposal Submissions</h2><p>Each submission has one unified evaluation sheet.</p></div></div>
         <div class="filters" aria-label="Project filters">

@@ -57,7 +57,7 @@ if ($project) {
         $finalVerdict = $candidateFinalVerdict;
     }
     $finalResultSubmissionId = $finalVerdict ? (int) ($finalVerdict['final_submission_id'] ?? 0) : (int) ($finalSubmission['id'] ?? 0);
-    if ($finalResultSubmissionId > 0) {
+    if ($finalVerdict && $finalResultSubmissionId > 0) {
         $finalEvalStmt = $pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id = ? AND final_submission_id = ? AND status = ? ORDER BY id');
         $finalEvalStmt->execute([(int) $project['id'], $finalResultSubmissionId, 'submitted']);
         $finalEvaluations = $finalEvalStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -221,10 +221,6 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
                 <div><small>Chairperson confirmation</small><strong><?=$finalVerdict ? 'Confirmed' : 'Pending'?></strong></div>
               </div>
               <?php if ($finalVerdict): ?><div class="proposal-student-revisions"><strong>Official verdict: <?=esc($finalVerdict['verdict_label'])?></strong><p>Confirmed <?=esc($formatDate($finalVerdict['published_at']))?></p></div><?php else: ?><div class="proposal-student-revisions"><strong>Official verdict pending Chairperson confirmation</strong></div><?php endif; ?>
-              <?php foreach ($finalEvaluations as $evaluation): ?>
-                <?php if (trim((string) ($evaluation['remarks'] ?? '')) !== ''): ?><div class="proposal-student-revisions"><strong>Evaluator feedback</strong><p><?=nl2br(esc($evaluation['remarks']))?></p></div><?php endif; ?>
-                <?php if (trim((string) ($evaluation['revisions'] ?? '')) !== ''): ?><div class="proposal-student-revisions"><strong>Required revisions</strong><p><?=nl2br(esc($evaluation['revisions']))?></p></div><?php endif; ?>
-              <?php endforeach; ?>
               <?php if ($finalVerdict && !empty($finalVerdict['revisions'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson required revisions</strong><p><?=nl2br(esc($finalVerdict['revisions']))?></p></div><?php endif; ?>
               <?php if ($finalVerdict && !empty($finalVerdict['chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson comments</strong><p><?=nl2br(esc($finalVerdict['chairperson_comments']))?></p></div><?php endif; ?>
             <?php endif; ?>

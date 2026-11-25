@@ -91,10 +91,6 @@ if ($project) {
       <section class="evaluation-card">
         <div class="evaluation-card-heading"><span class="evaluation-step">PART 3</span><h2>REVISIONS, COMMENTS AND RECOMMENDATIONS</h2></div>
         <p><?=nl2br(esc(trim((string) ($final['revisions'] ?: $final['chairperson_comments'] ?: 'No revisions or recommendations.'))))?></p>
-        <?php foreach (($consolidated['evaluations'] ?? []) as $evaluation): ?>
-          <?php if (trim((string) ($evaluation['remarks'] ?? '')) !== ''): ?><p><strong>Evaluator feedback:</strong><br><?=nl2br(esc($evaluation['remarks']))?></p><?php endif; ?>
-          <?php if (trim((string) ($evaluation['revisions'] ?? '')) !== ''): ?><p><strong>Evaluator revisions:</strong><br><?=nl2br(esc($evaluation['revisions']))?></p><?php endif; ?>
-        <?php endforeach; ?>
       </section>
       <section class="evaluation-card">
         <div class="evaluation-card-heading"><span class="evaluation-step">PART 4</span><h2>PANEL MEMBER'S SIGNATURE</h2></div>

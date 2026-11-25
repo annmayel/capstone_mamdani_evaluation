@@ -14,20 +14,21 @@ $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 
 $submission = latest_stage_submission($pdo, $projectId, 'proposal');
-if (!$submission || !in_array($submission['status'], ['submitted', 'under_evaluation'], true)
+if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId
+    || (int) ($submission['student_id'] ?? 0) !== (int) ($project['student_id'] ?? 0)
     || empty($submission['stored_filename'])
     || !is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename'])) {
-    header('Location: evaluate_selection.php?project_id=' . $projectId . '&evaluation_error=proposal_not_submitted');
+    header('Location: projects.php?evaluation_error=proposal_not_submitted');
     exit;
 }
+$schemaReady = proposal_evaluation_schema_available($pdo);
+if (!$schemaReady) { http_response_code(503); exit('The CEIT-T07A proposal evaluation schema is not installed. Apply sql/migrations/021_ceit_t07a_proposal_evaluations.sql before using this workspace.'); }
 if ($submission['status'] === 'submitted') {
     $pdo->prepare("UPDATE student_submissions SET status = 'under_evaluation' WHERE id = ? AND status = 'submitted'")->execute([(int) $submission['id']]);
     $submission['status'] = 'under_evaluation';
 }
 
 $criteria = proposal_criteria();
-$schemaReady = proposal_evaluation_schema_available($pdo);
-if (!$schemaReady) { http_response_code(503); exit('The CEIT-T07A proposal evaluation schema is not installed. Apply sql/migrations/021_ceit_t07a_proposal_evaluations.sql before using this workspace.'); }
 $latest = $pdo->prepare('SELECT * FROM proposal_evaluations WHERE project_id=? AND evaluator_id=? AND proposal_submission_id=? ORDER BY id DESC LIMIT 1');
 $latest->execute([$projectId, $evaluatorId, (int) $submission['id']]);
 $existing = $latest->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -162,7 +163,7 @@ $email = trim((string) ($_SESSION['user']['email'] ?? ''));
 <div class="dashboard-layout evaluator-layout">
   <aside class="sidebar evaluator-sidebar" id="evaluator-sidebar">
     <div class="sidebar-header"><img class="logo-icon" src="../images_bgnd/CSUCC%20LOGO.png" alt=""><div class="brand-copy"><span class="brand-line">CAPSTONE</span><span class="brand-line brand-emphasis">EVALUATION SYSTEM</span><small>EVALUATOR PORTAL</small></div></div>
-    <ul class="sidebar-nav"><li class="nav-section-label">Workspace</li><li><a href="dashboard.php"><span class="nav-icon">▦</span><span>Dashboard</span></a></li><li class="nav-section-label">Evaluation</li><li><a class="active" href="projects.php"><span class="nav-icon">▰</span><span>Evaluation Workspace</span></a></li><li><a href="evaluation_history.php"><span class="nav-icon">◷</span><span>Evaluation History</span></a></li><li class="nav-section-label">Account</li><li><a href="profile.php"><span class="nav-icon">◎</span><span>Profile</span></a></li><li><a href="../logout.php"><span class="nav-icon">↪</span><span>Logout</span></a></li></ul>
+    <ul class="sidebar-nav"><li class="nav-section-label">Workspace</li><li><a href="dashboard.php"><span class="nav-icon">▦</span><span>Dashboard</span></a></li><li class="nav-section-label">Evaluation</li><li><a class="active" aria-current="page" href="projects.php"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h4l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-9zM3.5 9.5h17"/></svg></span><span>Evaluation Workspace</span></a></li><li><a href="evaluation_history.php"><span class="nav-icon">◷</span><span>Evaluation History</span></a></li><li class="nav-section-label">Account</li><li><a href="profile.php"><span class="nav-icon">◎</span><span>Profile</span></a></li><li><a href="../logout.php"><span class="nav-icon">↪</span><span>Logout</span></a></li></ul>
     <div class="sidebar-user evaluator-sidebar-user"><div class="sidebar-user-avatar"><?=esc(strtoupper(substr($name, 0, 1)))?></div><div class="sidebar-user-info"><h5><?=esc($name)?></h5><p><?=esc($email)?></p></div></div>
   </aside>
   <button class="sidebar-backdrop" type="button" aria-label="Close navigation" tabindex="-1"></button>

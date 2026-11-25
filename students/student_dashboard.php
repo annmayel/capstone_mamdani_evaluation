@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/submissions.php';
 require_once __DIR__ . '/../php/student_auth.php';
 $user = require_approved_student($pdo);
 $verificationSuccess = (string) ($_SESSION['verification_success'] ?? '');
@@ -117,6 +118,14 @@ $stmt = $pdo->prepare('SELECT * FROM projects WHERE student_id = ? LIMIT 1');
 $stmt->execute([$uid]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 $project = $project ?: null;
+$latestProposalSubmission = null;
+if ($project) {
+    try {
+        $latestProposalSubmission = latest_stage_submission($pdo, (int) $project['id'], 'proposal');
+    } catch (PDOException $exception) {
+        error_log('[student dashboard] Could not load the current proposal submission: ' . $exception->getMessage());
+    }
+}
 if ($view === 'results' && $project) {
     try {
         $e3PublishedStmt = $pdo->prepare(
@@ -1091,7 +1100,7 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
 <?php endif; ?>
 <?php if ($view === 'results' && $project): ?>
   <section class="portal-panel proposal-student-result">
-    <?php $proposalIsConfirmed = !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']); ?>
+    <?php $proposalIsConfirmed = !empty($latestProposalSubmission) && !empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $latestProposalSubmission['id']; ?>
     <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION</span><h3>Official Proposal Result</h3></div><?php if ($proposalIsConfirmed): ?><strong class="panel-score"><?=number_format((float) $project['proposal_official_score'], 2)?>%</strong><?php endif; ?></div>
     <?php if (!$proposalIsConfirmed): ?>
       <div class="empty-state">Your proposal result will be available after the IT Chairperson publishes the official decision.</div>
