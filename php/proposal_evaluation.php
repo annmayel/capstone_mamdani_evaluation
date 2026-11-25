@@ -17,6 +17,16 @@ function proposal_criteria(): array
     ];
 }
 
+function proposal_evaluation_schema_available(PDO $pdo): bool
+{
+    try {
+        return $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false;
+    } catch (PDOException $exception) {
+        error_log('[proposal evaluation] Schema availability check failed: ' . $exception->getMessage());
+        return false;
+    }
+}
+
 function proposal_validate_scores(array $input, bool $requireComplete = true): array
 {
     $scores=[]; $errors=[];

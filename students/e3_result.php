@@ -17,10 +17,14 @@ if ($project) {
   $projectId = (int) $project['id'];
   $proposalSubmission = latest_stage_submission($pdo, $projectId, 'proposal');
   $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
-  if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false) {
-    $panel = proposal_consolidated($pdo, $projectId, (int) $proposalSubmission['id']);
-    if ($panel['calculated_score'] !== null) {
-      $proposalResult = ['criteria' => proposal_criteria(), 'averages' => $panel['criteria'], 'total' => $panel['calculated_score'], 'percentage' => $panel['calculated_score'], 'recommendation' => $panel['recommendation'], 'evaluations' => []];
+  if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && proposal_evaluation_schema_available($pdo)) {
+    try {
+      $panel = proposal_consolidated($pdo, $projectId, (int) $proposalSubmission['id']);
+      if ($panel['calculated_score'] !== null) {
+        $proposalResult = ['criteria' => proposal_criteria(), 'averages' => $panel['criteria'], 'total' => $panel['calculated_score'], 'percentage' => $panel['calculated_score'], 'recommendation' => $panel['recommendation'], 'evaluations' => []];
+      }
+    } catch (Throwable $exception) {
+      error_log('[student E3 result] Published proposal result could not be loaded: ' . $exception->getMessage());
     }
   }
   $finalStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');

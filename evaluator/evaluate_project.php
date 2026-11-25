@@ -26,7 +26,7 @@ if ($submission['status'] === 'submitted') {
 }
 
 $criteria = proposal_criteria();
-$schemaReady = $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false;
+$schemaReady = proposal_evaluation_schema_available($pdo);
 if (!$schemaReady) { http_response_code(503); exit('The CEIT-T07A proposal evaluation schema is not installed. Apply sql/migrations/021_ceit_t07a_proposal_evaluations.sql before using this workspace.'); }
 $latest = $pdo->prepare('SELECT * FROM proposal_evaluations WHERE project_id=? AND evaluator_id=? AND proposal_submission_id=? ORDER BY id DESC LIMIT 1');
 $latest->execute([$projectId, $evaluatorId, (int) $submission['id']]);

@@ -37,7 +37,7 @@ $canAcceptRevisions = $published
     && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
 
 if ($project) {
-    $proposalSchemaReady = $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false;
+    $proposalSchemaReady = proposal_evaluation_schema_available($pdo);
     if (!$proposalSchemaReady) {
         $errors[] = 'The CEIT-T07A proposal evaluation schema is not installed. Apply migration 021 before reviewing proposal results.';
     } elseif ($submission) {

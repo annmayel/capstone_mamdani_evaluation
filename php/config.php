@@ -38,6 +38,14 @@ foreach (['RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID', 'RAILWAY_ENVIRONMENT_NAME'
     }
 }
 
+// Railway is the production environment. Keep database diagnostics in server
+// logs there so PDO details are never rendered in a student-facing response.
+if ($isRailway) {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    ini_set('log_errors', '1');
+}
+
 /*
 |--------------------------------------------------------------------------
 | DATABASE ENVIRONMENT DETECTION

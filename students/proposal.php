@@ -38,12 +38,16 @@ if ($project) {
         error_log('[student submissions] Stage submission records are unavailable: ' . $exception->getMessage());
     }
 
-    if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && $pdo->query("SHOW TABLES LIKE 'proposal_evaluations'")->fetchColumn() !== false) {
-        $consolidated = proposal_consolidated($pdo, (int) $project['id'], (int) $proposalSubmission['id']);
-        $proposalEvaluations = $consolidated['evaluations'];
-        $proposalPanelTotal = $consolidated['calculated_score'];
-        $proposalPercentage = $consolidated['calculated_score'];
-        $proposalRecommendation = $consolidated['recommendation'];
+    if ($proposalSubmission && !empty($project['proposal_confirmed_at']) && (int) ($project['proposal_verdict_submission_id'] ?? 0) === (int) $proposalSubmission['id'] && proposal_evaluation_schema_available($pdo)) {
+        try {
+            $consolidated = proposal_consolidated($pdo, (int) $project['id'], (int) $proposalSubmission['id']);
+            $proposalEvaluations = $consolidated['evaluations'];
+            $proposalPanelTotal = $consolidated['calculated_score'];
+            $proposalPercentage = $consolidated['calculated_score'];
+            $proposalRecommendation = $consolidated['recommendation'];
+        } catch (Throwable $exception) {
+            error_log('[student proposal] Published proposal result could not be loaded: ' . $exception->getMessage());
+        }
     }
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');

@@ -3,15 +3,8 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
-require_once __DIR__ . '/../php/proposal_scoring_migration.php';
 require_once __DIR__ . '/../php/student_auth.php';
 $user = require_approved_student($pdo);
-$proposalScoringSchema = proposal_scoring_schema_state($pdo);
-if (!proposal_scoring_schema_is_ready($proposalScoringSchema)) {
-    http_response_code(503);
-    header('Content-Type: text/plain; charset=UTF-8');
-    exit('Proposal evaluation data is not ready. Run php /var/www/html/bin/migrate_workflow_schema.php from the Railway application shell, then reload this page.');
-}
 $verificationSuccess = (string) ($_SESSION['verification_success'] ?? '');
 unset($_SESSION['verification_success']);
 $uid = (int) $user['id'];
@@ -172,10 +165,6 @@ if ($project) {
 $projectEvaluation = null;
 $paperEvaluation = null;
 $projectFeedback = [];
-$proposalEvaluations = [];
-$proposalCriterionAverages = [];
-$proposalPanelTotal = null;
-$proposalPanelPercentage = null;
 $paperFeedback = [];
 $feedbackRows = [];
 $verdictStrengths = [];
@@ -190,33 +179,6 @@ $criteria = [
 if ($project) {
     $stmt = $pdo->prepare('SELECT * FROM evaluations_project WHERE project_id = ? ORDER BY id DESC LIMIT 1');
     $stmt->execute([(int) $project['id']]); $projectEvaluation = $stmt->fetch(PDO::FETCH_ASSOC);
-    $proposalCriteria = proposal_criteria();
-    $proposalColumns = array_column($proposalCriteria, 'key');
-    $proposalCommentColumns = array_column($proposalCriteria, 'comment_key');
-    $proposalRequiredFields = array_merge($proposalColumns, $proposalCommentColumns);
-    $proposalSelectFields = implode(', ', array_map(static fn($field) => 'e.' . $field, $proposalRequiredFields));
-    $proposalCompleteCondition = implode(' AND ', array_map(static fn($field) => 'e.' . $field . ' IS NOT NULL', $proposalColumns));
-    $proposalStmt = $pdo->prepare(
-        'SELECT ' . $proposalSelectFields . ', e.total_score, e.remarks, e.created_at, u.full_name AS evaluator_name
-         FROM evaluations_project e LEFT JOIN users u ON u.id=e.evaluator_id
-         WHERE e.project_id=? AND e.proposal_status=? AND ' . $proposalCompleteCondition . '
-         ORDER BY e.created_at DESC, e.id DESC'
-    );
-    $proposalStmt->execute([(int) $project['id'], 'submitted']);
-    $proposalEvaluations = $proposalStmt->fetchAll(PDO::FETCH_ASSOC);
-    if ($proposalEvaluations) {
-        $proposalCriterionAverages = array_fill_keys(array_keys($proposalCriteria), 0.0);
-        foreach ($proposalEvaluations as $proposalEvaluation) {
-            foreach ($proposalCriteria as $criterionKey => $criterion) {
-                $proposalCriterionAverages[$criterionKey] += (float) $proposalEvaluation[$criterion['key']];
-            }
-        }
-        foreach ($proposalCriterionAverages as $criterionKey => $sum) {
-            $proposalCriterionAverages[$criterionKey] = round($sum / count($proposalEvaluations), 2);
-        }
-        $proposalPanelTotal = round(array_sum($proposalCriterionAverages), 2);
-        $proposalPanelPercentage = round(($proposalPanelTotal / 120) * 100, 2);
-    }
     $stmt = $pdo->prepare('SELECT * FROM evaluations_paper WHERE project_id = ? ORDER BY id DESC LIMIT 1');
     $stmt->execute([(int) $project['id']]); $paperEvaluation = $stmt->fetch(PDO::FETCH_ASSOC);
     $stmt = $pdo->prepare('SELECT remarks, evaluator_id, created_at, total_score FROM evaluations_project WHERE project_id = ? AND remarks <> "" ORDER BY id DESC');
