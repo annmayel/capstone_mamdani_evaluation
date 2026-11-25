@@ -39,10 +39,10 @@ function latest_stage_submission(PDO $pdo, int $projectId, string $stage): ?arra
 }
 
 /**
- * Return the newest usable uploaded PDF for one project stage.  The project
- * foreign key is the workflow relationship used when a student submits a
- * paper; do not infer ownership by comparing a legacy projects.student_id
- * value, which may be NULL on older assigned projects.
+ * Return the newest uploaded-PDF record for one project stage. The database
+ * record is authoritative for workflow availability: the Student Portal uses
+ * the same project/stage query. File serving remains responsible for resolving
+ * the storage path when an evaluator opens the PDF.
  */
 function latest_stored_pdf_stage_submission(PDO $pdo, int $projectId, string $stage): ?array
 {
@@ -57,14 +57,12 @@ function latest_stored_pdf_stage_submission(PDO $pdo, int $projectId, string $st
          ORDER BY id DESC"
     );
     $stmt->execute([$projectId, $stage]);
-    $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
-
     while ($submission = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $filename = (string) ($submission['stored_filename'] ?? '');
         if ($filename === '' || basename($filename) !== $filename) {
             continue;
         }
-        if (is_file($storage . $filename)) {
+        if (str_ends_with(strtolower($filename), '.pdf')) {
             return $submission;
         }
     }

@@ -17,7 +17,7 @@ if (!$project) { header('Location: projects.php?evaluation_error=not_assigned');
 $submission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
 if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId
     || ($requestedSubmissionId > 0 && (int) $submission['id'] !== $requestedSubmissionId)) {
-    error_log('[proposal evaluation] No usable proposal PDF for assigned project ' . $projectId . '.');
+    error_log('[proposal evaluation] No uploaded proposal PDF record for assigned project ' . $projectId . '.');
     header('Location: evaluate_selection.php?project_id=' . $projectId . '&evaluation_error=proposal_not_submitted');
     exit;
 }
