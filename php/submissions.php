@@ -22,6 +22,58 @@ function log_workflow_database_error(string $stage, string $operation, Throwable
     ));
 }
 
+/**
+ * Directory for private submission files. Railway should set
+ * SUBMISSION_STORAGE_PATH to a directory within its mounted Volume (for
+ * example /data/submissions). The repository-relative default preserves local
+ * development installations.
+ */
+function submission_storage_path(): string
+{
+    $configured = getenv('SUBMISSION_STORAGE_PATH');
+    if ($configured === false || trim((string) $configured) === '') {
+        $configured = $_SERVER['SUBMISSION_STORAGE_PATH'] ?? $_ENV['SUBMISSION_STORAGE_PATH'] ?? '';
+    }
+
+    $configured = trim((string) $configured);
+    if ($configured !== '') {
+        $normalized = rtrim($configured, "\\/ ");
+        if ($normalized !== '') {
+            return $normalized;
+        }
+    }
+
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions';
+}
+
+/**
+ * Build a private PDF path without accepting directory traversal from a
+ * database value. Callers must still enforce their own user authorization.
+ */
+function submission_pdf_path(string $storedFilename): ?string
+{
+    if ($storedFilename === '' || basename($storedFilename) !== $storedFilename) {
+        return null;
+    }
+
+    return rtrim(submission_storage_path(), "\\/") . '/' . $storedFilename;
+}
+
+function submission_file_is_pdf(string $path): bool
+{
+    if (!is_file($path)) {
+        return false;
+    }
+
+    try {
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($path);
+        return $mime === 'application/pdf';
+    } catch (Throwable $exception) {
+        error_log('[submission storage] Unable to inspect PDF MIME type: ' . $exception->getMessage());
+        return false;
+    }
+}
+
 function latest_stage_submission(PDO $pdo, int $projectId, string $stage): ?array
 {
     if (!in_array($stage, ['proposal', 'final'], true)) {

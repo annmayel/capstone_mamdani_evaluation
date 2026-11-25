@@ -104,7 +104,7 @@ if ($hasUpload) {
     }
 
 
-    $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions';
+    $storage = submission_storage_path();
     if (!is_dir($storage) && !mkdir($storage, 0750, true) && !is_dir($storage)) {
         header('Location: ' . $redirect . '&error=storage_failed');
         exit;

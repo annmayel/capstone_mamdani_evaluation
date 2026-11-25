@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || !in_array($_SESSION['user']['role'], ['evaluator', 'dean'], true)) { http_response_code(403); exit('Forbidden'); }
 $evaluatorId = (int) $_SESSION['user']['id'];
@@ -24,8 +25,12 @@ if ($expectedStage !== '') {
 $stmt->execute($params);
 $submission = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$submission) { http_response_code(404); exit('Document not found or you are not authorized to view it.'); }
-$path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submission['stored_filename'];
-if (!is_file($path)) { http_response_code(404); exit('Document unavailable'); }
+$path = submission_pdf_path((string) ($submission['stored_filename'] ?? ''));
+if ($path === null || !submission_file_is_pdf($path)) {
+    error_log('[submission viewer] Authorized submission file is unavailable: submission_id=' . $submissionId . ' storage=' . submission_storage_path());
+    http_response_code(404);
+    exit('Document unavailable');
+}
 header('Content-Type: application/pdf');
 header('Content-Disposition: inline; filename="' . str_replace('"', '', $submission['original_filename']) . '"');
 header('X-Content-Type-Options: nosniff');

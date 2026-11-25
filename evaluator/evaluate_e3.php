@@ -11,10 +11,8 @@ $projectStmt->execute([$projectId,$evaluatorId]);$project=$projectStmt->fetch(PD
 if(!$project){header('Location: projects.php?evaluation_error=not_assigned');exit;}
 $proposalSubmission=latest_stage_submission($pdo,$projectId,'proposal');
 $finalSubmission=latest_stage_submission($pdo,$projectId,'final');
-$finalPdf=$finalSubmission&&!empty($finalSubmission['stored_filename'])
-    ? dirname(__DIR__).DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'submissions'.DIRECTORY_SEPARATOR.$finalSubmission['stored_filename']
-    : '';
-if(!$finalSubmission||(int)($finalSubmission['project_id']??0)!==$projectId||($requestedFinalSubmissionId>0&&(int)$finalSubmission['id']!==$requestedFinalSubmissionId)||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===''||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
+$finalPdf=$finalSubmission ? submission_pdf_path((string)($finalSubmission['stored_filename']??'')) : null;
+if(!$finalSubmission||(int)($finalSubmission['project_id']??0)!==$projectId||($requestedFinalSubmissionId>0&&(int)$finalSubmission['id']!==$requestedFinalSubmissionId)||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===null||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
  header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_submitted');exit;
 }
 if($finalSubmission['status']==='submitted'){

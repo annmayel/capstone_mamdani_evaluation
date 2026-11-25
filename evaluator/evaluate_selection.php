@@ -16,14 +16,14 @@ $finalReady = false;
 try {
     $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
     $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
-    $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
+    $finalPdf = $finalSubmission ? submission_pdf_path((string) ($finalSubmission['stored_filename'] ?? '')) : null;
     $proposalReady = $proposalSubmission
         && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
     $finalReady = $finalSubmission
         && (int) ($finalSubmission['project_id'] ?? 0) === $projectId
         && in_array($finalSubmission['status'], ['submitted', 'under_evaluation', 'accepted', 'revision_required'], true)
-        && !empty($finalSubmission['stored_filename'])
-        && is_file($storage . $finalSubmission['stored_filename'])
+        && $finalPdf !== null
+        && is_file($finalPdf)
         && proposal_allows_final_submission($project, $proposalSubmission);
 } catch (PDOException $exception) {
     error_log('[evaluation selection] Stage submission records are unavailable: ' . $exception->getMessage());
