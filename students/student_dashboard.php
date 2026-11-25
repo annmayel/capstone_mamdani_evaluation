@@ -5,7 +5,7 @@ require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/proposal_scoring_migration.php';
 require_once __DIR__ . '/../php/student_auth.php';
-$user = require_verified_student($pdo);
+$user = require_approved_student($pdo);
 $proposalScoringSchema = proposal_scoring_schema_state($pdo);
 if (!proposal_scoring_schema_is_ready($proposalScoringSchema)) {
     http_response_code(503);

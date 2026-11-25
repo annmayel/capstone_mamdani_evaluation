@@ -15,15 +15,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
   } elseif ($userId < 1) {
     $userFormErrors[] = 'Select a valid student account to approve.';
   } else {
-    $approveStmt = $pdo->prepare("UPDATE users SET student_approved_at = COALESCE(student_approved_at, UTC_TIMESTAMP()) WHERE id = ? AND role = 'student' AND email_verified_at IS NOT NULL");
+    $approveStmt = $pdo->prepare("UPDATE users SET student_approved_at = COALESCE(student_approved_at, UTC_TIMESTAMP()) WHERE id = ? AND role = 'student'");
     $approveStmt->execute([$userId]);
-    $studentStmt = $pdo->prepare("SELECT email_verified_at, student_approved_at FROM users WHERE id = ? AND role = 'student' LIMIT 1");
+    $studentStmt = $pdo->prepare("SELECT student_approved_at FROM users WHERE id = ? AND role = 'student' LIMIT 1");
     $studentStmt->execute([$userId]);
     $student = $studentStmt->fetch(PDO::FETCH_ASSOC);
     if (!$student) {
       $userFormErrors[] = 'The selected student account could not be found.';
-    } elseif (empty($student['email_verified_at'])) {
-      $userFormErrors[] = 'The student must verify their email with the OTP before approval.';
     } else {
       $_SESSION['user_approval_notice'] = 'Student approved. They can now sign in to access the dashboard.';
       header('Location: users.php?embedded=1');

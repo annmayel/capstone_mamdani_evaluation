@@ -9,10 +9,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 try {
 	fuzzy_otp_invalidate_pending($pdo);
-	fuzzy_otp_invalidate_pending($pdo, 'student_registration_otp');
 } catch (Throwable $exception) {
 	unset($_SESSION['pending_otp']);
-	unset($_SESSION['student_registration_otp']);
 }
 
 $_SESSION = [];

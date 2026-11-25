@@ -1,7 +1,6 @@
 <?php
 
 require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/otp_auth.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
 	session_set_cookie_params([
@@ -12,14 +11,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 	session_start();
 }
 
-$otpSessionKey = 'student_registration_otp';
 $errors = [];
 $fieldErrors = [];
-$otpMessage = '';
-$otpMessageType = 'error';
-$showOtpModal = false;
-$otpExpiresIn = 300;
-$otpResendIn = 60;
 $studentIdNumber = strtoupper(trim((string) ($_POST['student_id_number'] ?? '')));
 $groupName = trim((string) ($_POST['group_name'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
@@ -37,95 +30,9 @@ if (!empty($_SESSION['user'])) {
 	exit;
 }
 
-$loadOtpState = static function () use ($pdo, $otpSessionKey, &$showOtpModal, &$otpExpiresIn, &$otpResendIn): void {
-	$row = fuzzy_otp_pending_row($pdo, false, $otpSessionKey);
-	if (!$row) {
-		return;
-	}
-
-	$showOtpModal = true;
-	$otpExpiresIn = max(0, (int) $row['seconds_until_expiry']);
-	$otpResendIn = max(0, 60 - (int) $row['seconds_since_send']);
-};
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-	$action = (string) ($_POST['action'] ?? 'register');
 	if (!csrf_check($_POST['csrf'] ?? '')) {
-		if (in_array($action, ['verify_otp', 'resend_otp'], true)) {
-			$otpMessage = 'Your session expired. Refresh the page and try again.';
-			$loadOtpState();
-		} else {
-			$errors[] = 'Your session expired. Refresh the page and try again.';
-		}
-	} elseif ($action === 'verify_otp') {
-		$otpCode = trim((string) ($_POST['otp'] ?? ''));
-		if (!preg_match('/^\d{6}$/D', $otpCode)) {
-			$otpMessage = 'Enter the 6-digit verification code.';
-		} else {
-			$result = fuzzy_otp_verify($pdo, $otpCode, $otpSessionKey, 'student_registration');
-			if ($result['status'] === 'awaiting_approval') {
-				$_SESSION['approval_pending_notice'] = 'Your CSUCC email is verified. Your student account is waiting for Chairperson approval before you can sign in.';
-				header('Location: ../index.php?approval_pending=1');
-				exit;
-			} elseif ($result['status'] === 'verified') {
-				$verifiedUser = $result['user'];
-				$userId = (int) $verifiedUser['id'];
-				require_once __DIR__ . '/email_notifications.php';
-				notify_user_once(
-					$pdo,
-					$userId,
-					'account-registered:' . $userId,
-					'Email verified',
-					'Your student account is verified and ready to use.',
-					'students/student_dashboard.php'
-				);
-				fuzzy_email_notify($pdo, [
-					'event_key' => 'account_registered:' . $userId,
-					'event_type' => 'account_registered',
-					'recipient_user_id' => $userId,
-					'recipient_email' => (string) $verifiedUser['email'],
-					'recipient_name' => (string) $verifiedUser['full_name'],
-					'subject' => 'Your Capstone Evaluation System account is verified',
-					'heading' => 'Email verified',
-					'intro' => 'Your student account is verified and ready to use.',
-					'sections' => [[
-						'title' => 'Account details',
-						'rows' => [['Role', 'Student'], ['CSUCC ID Number', (string) $verifiedUser['student_id_number']],
-							['Account ID', (string) $verifiedUser['account_id']]],
-					]],
-					'portal_path' => '/students/student_dashboard.php',
-				]);
-				$_SESSION['verification_success'] = 'Your email is verified. Your student account is ready.';
-				header('Location: ../students/student_dashboard.php');
-				exit;
-			}
-
-			$otpMessage = match ($result['status']) {
-				'invalid' => 'That code is incorrect. You have ' . (int) $result['attempts_left'] . ' attempt(s) remaining.',
-				'expired' => 'That code has expired. Request a new code to continue.',
-				'locked' => 'Too many incorrect attempts. Submit your registration details again to request a new code.',
-				'missing' => 'This verification request is no longer active. Submit your registration details again to request a new code.',
-				default => 'We could not verify the code. Please try again.',
-			};
-		}
-		$loadOtpState();
-	} elseif ($action === 'resend_otp') {
-		$result = fuzzy_otp_resend($pdo, $otpSessionKey, 'student_registration');
-		$otpMessage = match ($result) {
-			'sent' => 'A new verification code has been sent.',
-			'cooldown' => 'Please wait before requesting another code.',
-			'rate_limited' => 'Too many codes have been requested. Try again later.',
-			'delivery_failed' => 'We could not deliver a new code. Check your email address or try again later.',
-			'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
-			'locked' => 'Too many incorrect attempts. Submit your registration details again to request a new code.',
-			'missing' => 'This verification request is no longer active. Submit your registration details again to request a new code.',
-			default => 'We could not resend the code. Please try again.',
-		};
-		$otpMessageType = $result === 'sent' ? 'success' : 'error';
-		$loadOtpState();
-	} elseif ($action === 'cancel_otp') {
-		fuzzy_otp_invalidate_pending($pdo, $otpSessionKey);
-		$errors[] = 'Email verification was cancelled. Your account remains unverified; submit the same details again when you are ready.';
+		$errors[] = 'Your session expired. Refresh the page and try again.';
 	} else {
 		$studentIdNumber = strtoupper(trim((string) ($_POST['student_id_number'] ?? '')));
 		$groupName = trim((string) ($_POST['group_name'] ?? ''));
@@ -158,16 +65,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$fieldErrors['confirm_password'] = 'Passwords do not match.';
 		}
 
-		if (!$fieldErrors && !fuzzy_otp_mail_configured()) {
-			$errors[] = 'Email verification is not configured. Please contact the system administrator before registering.';
-		}
-
 		if (!$fieldErrors) {
-			$emailQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, email_verified_at FROM users WHERE email = ? LIMIT 1');
+			$emailQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, student_approved_at FROM users WHERE email = ? LIMIT 1');
 			$emailQuery->execute([$email]);
 			$existingEmail = $emailQuery->fetch(PDO::FETCH_ASSOC) ?: null;
 
-			$idQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, email_verified_at FROM users WHERE student_id_number = ? LIMIT 1');
+			$idQuery = $pdo->prepare('SELECT id, email, password_hash, role, student_id_number, student_approved_at FROM users WHERE student_id_number = ? LIMIT 1');
 			$idQuery->execute([$studentIdNumber]);
 			$existingStudentId = $idQuery->fetch(PDO::FETCH_ASSOC) ?: null;
 
@@ -177,18 +80,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					&& $existingStudentId
 					&& (int) $existingEmail['id'] === (int) $existingStudentId['id']
 					&& $existingEmail['role'] === 'student'
-					&& $existingEmail['email_verified_at'] === null
+					&& $existingEmail['student_approved_at'] === null
 					&& hash_equals(strtolower((string) $existingEmail['email']), $email)
 					&& hash_equals((string) $existingEmail['student_id_number'], $studentIdNumber)
 					&& password_verify($password, (string) $existingEmail['password_hash']);
 
 				if ($bothMatch) {
 					$pendingAccount = $existingEmail;
-					$pdo->prepare('UPDATE users SET group_name = ?, department = ? WHERE id = ? AND role = \'student\' AND email_verified_at IS NULL')
+					$pdo->prepare('UPDATE users SET group_name = ?, department = ? WHERE id = ? AND role = \'student\' AND student_approved_at IS NULL')
 						->execute([$groupName, $department ?: null, (int) $pendingAccount['id']]);
 				} else {
 					if ($existingEmail) {
-						$fieldErrors['email'] = 'An account with this email already exists. If you have an unverified registration, use the same Student ID and password to request a new code.';
+						$fieldErrors['email'] = 'An account with this email already exists. If the student account is still pending approval, use the same Student ID and password.';
 					}
 					if ($existingStudentId) {
 						$fieldErrors['student_id_number'] = 'An account with this Student ID Number already exists.';
@@ -198,9 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 			if (!$fieldErrors) {
 				try {
-					if ($pendingAccount) {
-						$userId = (int) $pendingAccount['id'];
-					} else {
+					if (!$pendingAccount) {
 						$accountId = generate_account_id($pdo, 'student');
 						$hash = password_hash($password, PASSWORD_DEFAULT);
 						$insert = $pdo->prepare('INSERT INTO users (full_name, email, password_hash, role, account_id, department, can_evaluate, student_id_number, group_name) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)');
@@ -214,33 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 							$studentIdNumber,
 							$groupName,
 						]);
-						$userId = (int) $pdo->lastInsertId();
 					}
 
-					$otpResult = fuzzy_otp_begin($pdo, $userId, $email, 'student_registration', $otpSessionKey);
-					if ($otpResult === 'sent') {
-						$otpMessage = "We've sent a 6-digit verification code to your registered email address.";
-						$otpMessageType = 'success';
-						$loadOtpState();
-					} elseif (isset($_SESSION[$otpSessionKey])) {
-						$otpMessage = match ($otpResult) {
-							'not_configured' => 'Email verification is not configured. Please contact the system administrator.',
-							'rate_limited' => 'Too many verification codes have been requested. Try again later.',
-							'cooldown' => 'Please wait before requesting another verification code.',
-							default => 'We could not start a new verification request. You can still use the current code if it has not expired.',
-						};
-						$loadOtpState();
-					} else {
-						$errors[] = match ($otpResult) {
-							'not_configured' => 'Email verification is not configured. Please contact the system administrator before registering.',
-							'delivery_failed' => 'Your registration is saved but unverified. We could not deliver the code; submit the same details again to retry.',
-							'rate_limited' => 'Too many verification codes have been requested. Try again later.',
-							'cooldown' => 'Please wait before requesting another verification code.',
-							'invalid_email' => 'The registered email address could not be verified. Check it and contact the system administrator if the problem continues.',
-							'not_pending' => 'This account is already verified. Please sign in instead.',
-							default => 'We could not start email verification. Please try again.',
-						};
-					}
+					$_SESSION['approval_pending_notice'] = 'Registration is complete. Your student account is waiting for Chairperson approval before you can sign in.';
+					header('Location: ../index.php?approval_pending=1');
+					exit;
 				} catch (PDOException $exception) {
 					if ((int) ($exception->errorInfo[1] ?? 0) === 1062) {
 						$message = strtolower((string) $exception->getMessage());
@@ -258,10 +137,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 }
 
-if (!$showOtpModal && isset($_SESSION[$otpSessionKey])) {
-	$loadOtpState();
-}
-
 $requestPath = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
 $assetPrefix = str_contains($requestPath, '/php/') ? '../' : '';
 $firstInvalidField = (string) array_key_first($fieldErrors);
@@ -272,7 +147,7 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Create Account | Fuzzy Score</title>
-	<link rel="stylesheet" href="<?= $assetPrefix ?>assets/style.css?v=20261114-otp">
+	<link rel="stylesheet" href="<?= $assetPrefix ?>assets/style.css?v=20261119-registration">
 	<link rel="icon" type="image/png" href="<?= $assetPrefix ?>images_bgnd/favicon.png">
 </head>
 <body class="register-page">
@@ -296,7 +171,7 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 				<div>
 					<p class="register-overline">STUDENT ACCOUNT REGISTRATION</p>
 					<h1 id="register-title">Create your account</h1>
-					<p>Verify your CSUCC email to activate your student account.</p>
+					<p>Email confirmation is not required. Chairperson approval is required before you can sign in.</p>
 				</div>
 			</div>
 
@@ -305,11 +180,8 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 					<?php foreach ($errors as $error): ?><div><?= esc($error) ?></div><?php endforeach; ?>
 				</div>
 			<?php endif; ?>
-			<?php if ($otpMessage !== '' && !$showOtpModal): ?><div class="register-alert" role="alert"><?= esc($otpMessage) ?></div><?php endif; ?>
-
 			<form class="register-form" method="post" novalidate>
 				<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
-				<input type="hidden" name="action" value="register">
 				<div class="register-column">
 					<label for="student_id_number">Student ID Number <small>Required</small></label>
 					<input id="student_id_number" name="student_id_number" type="text" value="<?= esc($studentIdNumber) ?>" placeholder="Enter your student ID number" maxlength="50" autocomplete="off" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,49}" aria-describedby="student-id-feedback" aria-invalid="<?= isset($fieldErrors['student_id_number']) ? 'true' : 'false' ?>" <?= isset($fieldErrors['student_id_number']) ? 'class="is-invalid" data-server-error="1"' : '' ?> required>
@@ -352,36 +224,6 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 		</section>
 	</main>
 
-	<dialog class="email-otp-modal" id="email-otp-modal" aria-labelledby="otp-title">
-		<div class="email-otp-content">
-			<p class="register-overline">EMAIL VERIFICATION</p>
-			<h2 id="otp-title">Verify Your Email</h2>
-			<p class="email-otp-intro">We've sent a 6-digit verification code to your registered email address.</p>
-			<p class="email-otp-address">Code sent to <strong><?= esc(fuzzy_otp_mask_email((string) ($_SESSION[$otpSessionKey]['email'] ?? ''))) ?></strong></p>
-			<?php if ($otpMessage !== ''): ?><div class="email-otp-message <?= $otpMessageType === 'success' ? 'is-success' : '' ?>" role="<?= $otpMessageType === 'success' ? 'status' : 'alert' ?>"><?= esc($otpMessage) ?></div><?php endif; ?>
-			<form method="post" class="email-otp-verify-form">
-				<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
-				<input type="hidden" name="action" value="verify_otp">
-				<label for="otp-code">6-digit verification code</label>
-				<input id="otp-code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-label="6-digit verification code" required>
-				<div class="email-otp-timers"><span>Code expires in <strong id="otp-expiry-countdown"></strong></span><span id="otp-resend-countdown"></span></div>
-				<button class="create-account-button" type="submit">Verify &amp; Continue</button>
-			</form>
-			<div class="email-otp-actions">
-				<form method="post" id="otp-resend-form">
-					<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
-					<input type="hidden" name="action" value="resend_otp">
-					<button class="email-otp-link" id="otp-resend-button" type="submit">Resend OTP</button>
-				</form>
-				<form method="post">
-					<input type="hidden" name="csrf" value="<?= esc(csrf_token()) ?>">
-					<input type="hidden" name="action" value="cancel_otp">
-					<button class="email-otp-link" type="submit">Cancel verification</button>
-				</form>
-			</div>
-		</div>
-	</dialog>
-
 	<script>
 		(() => {
 			const form = document.querySelector('.register-form');
@@ -392,8 +234,6 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 			const password = document.getElementById('password');
 			const confirmPassword = document.getElementById('confirm_password');
 			const passwordToggle = document.getElementById('password-toggle');
-			const otpDialog = document.getElementById('email-otp-modal');
-			const otpInput = document.getElementById('otp-code');
 			const firstInvalidField = <?= json_encode($firstInvalidField) ?>;
 			let submitted = <?= $fieldErrors ? 'true' : 'false' ?>;
 			let confirmAttempted = submitted;
@@ -533,29 +373,6 @@ $firstInvalidField = (string) array_key_first($fieldErrors);
 			});
 			if (firstInvalidField) document.getElementById(firstInvalidField)?.focus();
 
-			otpInput?.addEventListener('input', () => {
-				otpInput.value = otpInput.value.replace(/\D/g, '').slice(0, 6);
-			});
-
-			<?php if ($showOtpModal): ?>
-			otpDialog.showModal();
-			otpInput.focus();
-			let expirySeconds = <?= (int) $otpExpiresIn ?>;
-			let resendSeconds = <?= (int) $otpResendIn ?>;
-			const expiryText = document.getElementById('otp-expiry-countdown');
-			const resendText = document.getElementById('otp-resend-countdown');
-			const resendButton = document.getElementById('otp-resend-button');
-			const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-			const updateTimers = () => {
-				expiryText.textContent = formatTime(expirySeconds);
-				resendButton.disabled = resendSeconds > 0;
-				resendText.textContent = resendSeconds > 0 ? `Resend available in ${formatTime(resendSeconds)}` : 'You can request a new code.';
-				if (expirySeconds > 0) expirySeconds -= 1;
-				if (resendSeconds > 0) resendSeconds -= 1;
-			};
-			updateTimers();
-			window.setInterval(updateTimers, 1000);
-			<?php endif; ?>
 		})();
 	</script>
 </body>

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 function student_account_access_status(array $account): string
 {
-	if (empty($account['email_verified_at'])) {
-		return 'email_unverified';
-	}
 	if (empty($account['student_approved_at'])) {
 		return 'approval_pending';
 	}
@@ -14,7 +11,7 @@ function student_account_access_status(array $account): string
 	return 'approved';
 }
 
-function require_verified_student(PDO $pdo): array
+function require_approved_student(PDO $pdo): array
 {
 	if (session_status() !== PHP_SESSION_ACTIVE) {
 		session_start();
@@ -26,12 +23,12 @@ function require_verified_student(PDO $pdo): array
 		exit;
 	}
 
-	$stmt = $pdo->prepare('SELECT id, email_verified_at, student_approved_at FROM users WHERE id = ? AND role = ? LIMIT 1');
+	$stmt = $pdo->prepare('SELECT id, student_approved_at FROM users WHERE id = ? AND role = ? LIMIT 1');
 	$stmt->execute([(int) ($user['id'] ?? 0), 'student']);
 	$account = $stmt->fetch(PDO::FETCH_ASSOC);
-	if (!$account || student_account_access_status($account) === 'email_unverified') {
+	if (!$account) {
 		unset($_SESSION['user']);
-		header('Location: ../index.php?verification_required=1');
+		header('Location: ../index.php');
 		exit;
 	}
 	if (student_account_access_status($account) === 'approval_pending') {
@@ -40,7 +37,6 @@ function require_verified_student(PDO $pdo): array
 		exit;
 	}
 
-	$_SESSION['user']['email_verified_at'] = $account['email_verified_at'];
 	$_SESSION['user']['student_approved_at'] = $account['student_approved_at'];
 	return $_SESSION['user'];
 }

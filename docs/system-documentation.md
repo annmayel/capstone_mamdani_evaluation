@@ -94,6 +94,10 @@ The system covers authentication, role routing, project records, evaluator assig
 - **Availability:** The application is intended for local or institutional deployment through XAMPP.
 - **Performance:** The current data volume is suitable for ordinary capstone evaluation workloads; indexing and pagination should be added for large deployments.
 
+### Student registration and email confirmation
+
+Student registration does not send or require an email confirmation code, so it does not depend on SMTP. A syntactically valid `@csucc.edu.ph` email address is still required. Newly registered students remain unable to sign in until the IT Chairperson approves their account. Adviser login email OTP is a separate flow and remains enabled.
+
 ## 8. Fuzzy Processing Method
 
 ### 8.1 Panel averages and official average

@@ -15,50 +15,116 @@ function fuzzy_otp_environment_value(string $name): string
 	return $value === false ? '' : (string) $value;
 }
 
-function fuzzy_otp_mail_config(): ?array
+function fuzzy_otp_environment_raw(string $name)
 {
-	$mailerClass = 'PHPMailer\\PHPMailer\\PHPMailer';
-	$autoload = __DIR__ . '/vendor/autoload.php';
-	if (!is_file($autoload)) {
-		error_log('[email-otp] SMTP is unavailable: the Composer autoloader is missing.');
-		return null;
+	$value = getenv($name);
+	if ($value === false && isset($_SERVER[$name])) {
+		$value = (string) $_SERVER[$name];
 	}
-	require_once $autoload;
-	if (!class_exists($mailerClass)) {
-		error_log('[email-otp] SMTP is unavailable: PHPMailer is missing from the Composer dependencies.');
-		return null;
+	if ($value === false && isset($_ENV[$name])) {
+		$value = (string) $_ENV[$name];
 	}
+
+	return $value === false ? false : (string) $value;
+}
+
+function fuzzy_otp_mail_diagnostics(): array
+{
+	$legacyNames = [
+		'MAIL_HOST' => 'FUZZY_SMTP_HOST',
+		'MAIL_PORT' => 'FUZZY_SMTP_PORT',
+		'MAIL_ENCRYPTION' => 'FUZZY_SMTP_ENCRYPTION',
+		'MAIL_USERNAME' => 'FUZZY_SMTP_USERNAME',
+		'MAIL_PASSWORD' => 'FUZZY_SMTP_PASSWORD',
+		'MAIL_FROM_ADDRESS' => 'FUZZY_SMTP_FROM_EMAIL',
+		'MAIL_FROM_NAME' => 'FUZZY_SMTP_FROM_NAME',
+	];
+	$values = [];
+	foreach ($legacyNames as $name => $legacyName) {
+		$value = fuzzy_otp_environment_raw($name);
+		$values[$name] = $value === false ? fuzzy_otp_environment_raw($legacyName) : $value;
+	}
+
+	$mailer = fuzzy_otp_environment_raw('MAIL_MAILER');
+	$mailer = $mailer === false ? 'smtp' : strtolower(trim($mailer));
+	$portValue = $values['MAIL_PORT'];
+	$port = $portValue === false ? 587 : (preg_match('/^\d+$/D', $portValue) ? (int) $portValue : 0);
+	$encryptionValue = $values['MAIL_ENCRYPTION'];
+	$encryption = $encryptionValue === false ? 'tls' : strtolower(trim($encryptionValue));
+	$fromNameValue = $values['MAIL_FROM_NAME'];
+	$fromName = $fromNameValue === false || trim($fromNameValue) === ''
+		? 'Capstone Evaluation System'
+		: trim($fromNameValue);
 
 	$settings = [
-		'host' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_HOST')),
-		'username' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_USERNAME')),
-		'password' => preg_replace('/\s+/', '', fuzzy_otp_environment_value('FUZZY_SMTP_PASSWORD')),
-		'from_email' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_FROM_EMAIL')),
-		'from_name' => trim(fuzzy_otp_environment_value('FUZZY_SMTP_FROM_NAME')) ?: 'Fuzzy Score',
-		'port' => (int) (fuzzy_otp_environment_value('FUZZY_SMTP_PORT') ?: 587),
-		'encryption' => strtolower(fuzzy_otp_environment_value('FUZZY_SMTP_ENCRYPTION') ?: 'tls'),
+		'mailer' => $mailer,
+		'host' => trim((string) ($values['MAIL_HOST'] === false ? '' : $values['MAIL_HOST'])),
+		'username' => (string) ($values['MAIL_USERNAME'] === false ? '' : $values['MAIL_USERNAME']),
+		'password' => (string) ($values['MAIL_PASSWORD'] === false ? '' : $values['MAIL_PASSWORD']),
+		'from_email' => trim((string) ($values['MAIL_FROM_ADDRESS'] === false ? '' : $values['MAIL_FROM_ADDRESS'])),
+		'from_name' => $fromName,
+		'port' => $port,
+		'encryption' => $encryption,
 	];
-
-	$invalidSettings = [];
-	foreach ([
-		'FUZZY_SMTP_HOST' => $settings['host'] !== '',
-		'FUZZY_SMTP_USERNAME' => $settings['username'] !== '',
-		'FUZZY_SMTP_PASSWORD' => $settings['password'] !== '',
-		'FUZZY_SMTP_FROM_EMAIL' => filter_var($settings['from_email'], FILTER_VALIDATE_EMAIL) !== false,
-		'FUZZY_SMTP_PORT' => $settings['port'] > 0,
-		'FUZZY_SMTP_ENCRYPTION' => in_array($settings['encryption'], ['tls', 'ssl'], true),
-	] as $name => $isValid) {
+	$issues = [];
+	$requiredValues = [
+		'MAIL_HOST' => $settings['host'] !== '',
+		'MAIL_USERNAME' => trim($settings['username']) !== '',
+		'MAIL_PASSWORD' => trim($settings['password']) !== '',
+		'MAIL_FROM_ADDRESS' => filter_var($settings['from_email'], FILTER_VALIDATE_EMAIL) !== false,
+	];
+	foreach ($requiredValues as $name => $isValid) {
 		if (!$isValid) {
-			$invalidSettings[] = $name;
+			$issues[] = 'Missing or invalid ' . $name . '.';
+		}
+	}
+	if ($mailer !== 'smtp') {
+		$issues[] = 'MAIL_MAILER must be smtp.';
+	}
+	if ($port < 1 || $port > 65535) {
+		$issues[] = 'MAIL_PORT must be an integer from 1 to 65535.';
+	}
+	if (!in_array($encryption, ['tls', 'ssl'], true)) {
+		$issues[] = 'MAIL_ENCRYPTION must be tls or ssl.';
+	}
+	if (
+		$settings['host'] === ''
+		|| (filter_var($settings['host'], FILTER_VALIDATE_IP) === false
+			&& filter_var($settings['host'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false)
+	) {
+		$issues[] = 'MAIL_HOST is invalid.';
+	}
+	if (strlen($settings['from_name']) > 200 || preg_match('/[\r\n\x00-\x1f]/', $settings['from_name'])) {
+		$issues[] = 'MAIL_FROM_NAME is invalid.';
+	}
+	$isRailway = false;
+	foreach (['RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID', 'RAILWAY_ENVIRONMENT_NAME'] as $name) {
+		if (fuzzy_otp_environment_value($name) !== '') {
+			$isRailway = true;
+			break;
+		}
+	}
+	if ($isRailway && in_array(strtolower(rtrim($settings['host'], '.')), ['localhost', '127.0.0.1', '::1', '0.0.0.0'], true)) {
+		$issues[] = 'MAIL_HOST cannot use a local address in Railway.';
+	}
+
+	$autoload = __DIR__ . '/vendor/autoload.php';
+	if (!is_file($autoload)) {
+		$issues[] = 'PHPMailer Composer autoloader is missing.';
+	} else {
+		require_once $autoload;
+		if (!class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+			$issues[] = 'PHPMailer is missing from the Composer dependencies.';
 		}
 	}
 
-	if ($invalidSettings) {
-		error_log('[email-otp] SMTP configuration is missing or invalid: ' . implode(', ', $invalidSettings) . '.');
-		return null;
-	}
+	return ['configured' => $issues === [], 'issues' => $issues, 'settings' => $settings];
+}
 
-	return $settings;
+function fuzzy_otp_mail_config(): ?array
+{
+	$diagnostics = fuzzy_otp_mail_diagnostics();
+	return $diagnostics['configured'] ? $diagnostics['settings'] : null;
 }
 
 function fuzzy_otp_mail_configured(): bool
@@ -68,6 +134,10 @@ function fuzzy_otp_mail_configured(): bool
 
 function fuzzy_otp_send_email(string $recipient, string $code, string $recipientName = ''): bool
 {
+	if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+		return false;
+	}
+
 	$settings = fuzzy_otp_mail_config();
 	if ($settings === null) {
 		return false;
@@ -138,7 +208,7 @@ function fuzzy_otp_begin(PDO $pdo, int $userId, string $email, string $purpose =
 	if (!fuzzy_otp_mail_configured()) {
 		return 'not_configured';
 	}
-	if (!in_array($purpose, ['login', 'student_registration', 'adviser_login'], true)) {
+	if (!in_array($purpose, ['login', 'adviser_login'], true)) {
 		return 'failed';
 	}
 
@@ -159,10 +229,7 @@ function fuzzy_otp_begin(PDO $pdo, int $userId, string $email, string $purpose =
 			$pdo->commit();
 			return 'invalid_email';
 		}
-		if (
-			($purpose === 'student_registration' && ($account['role'] !== 'student' || $account['email_verified_at'] !== null))
-			|| ($purpose === 'adviser_login' && ($account['role'] !== 'adviser' || $account['email_verified_at'] !== null))
-		) {
+		if ($purpose === 'adviser_login' && ($account['role'] !== 'adviser' || $account['email_verified_at'] !== null)) {
 			$pdo->commit();
 			return 'not_pending';
 		}
@@ -359,7 +426,6 @@ function fuzzy_otp_verify(PDO $pdo, string $code, string $sessionKey = 'pending_
 		$purpose = (string) $row['purpose'];
 		if (
 			!$user
-			|| ($purpose === 'student_registration' && $user['role'] !== 'student')
 			|| ($purpose === 'adviser_login' && $user['role'] !== 'adviser')
 			|| ($purpose === 'login' && !in_array($user['role'], ['dean', 'evaluator', 'student', 'adviser'], true))
 			|| !hash_equals(
@@ -374,7 +440,7 @@ function fuzzy_otp_verify(PDO $pdo, string $code, string $sessionKey = 'pending_
 			return ['status' => 'missing'];
 		}
 
-		if (in_array($purpose, ['student_registration', 'adviser_login'], true) && empty($user['email_verified_at'])) {
+		if ($purpose === 'adviser_login' && empty($user['email_verified_at'])) {
 			$verifyAccount = $pdo->prepare('UPDATE users SET email_verified_at = UTC_TIMESTAMP() WHERE id = ? AND email_verified_at IS NULL');
 			$verifyAccount->execute([(int) $user['id']]);
 			if ($verifyAccount->rowCount() !== 1) {
@@ -401,10 +467,6 @@ function fuzzy_otp_verify(PDO $pdo, string $code, string $sessionKey = 'pending_
 
 	session_regenerate_id(true);
 	unset($_SESSION[$sessionKey]);
-	if ($purpose === 'student_registration' && empty($user['student_approved_at'])) {
-		unset($_SESSION['user']);
-		return ['status' => 'awaiting_approval', 'user' => $user];
-	}
 	$_SESSION['user'] = $user;
 	return ['status' => 'verified', 'user' => $user];
 }

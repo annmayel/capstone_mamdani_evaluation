@@ -5,7 +5,7 @@ require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/submissions.php';
 require_once __DIR__ . '/../php/student_auth.php';
-$user = require_verified_student($pdo);
+$user = require_approved_student($pdo);
 $projectStmt = $pdo->prepare('SELECT * FROM projects WHERE student_id = ? LIMIT 1');
 $projectStmt->execute([(int) $user['id']]);
 $project = $projectStmt->fetch(PDO::FETCH_ASSOC);

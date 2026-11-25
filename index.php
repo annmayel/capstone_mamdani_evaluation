@@ -104,10 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && password_verify($password, $user['password_hash'])
         && isset($destinations[$user['role']])
       ) {
-        if ($user['role'] === 'student' && student_account_access_status($user) === 'email_unverified') {
-          $error = 'This student account is not verified. Return to registration and submit the same details to request a verification code.';
-        } elseif ($user['role'] === 'student' && student_account_access_status($user) === 'approval_pending') {
-          $error = 'Your email is verified, but your student account is waiting for Chairperson approval.';
+        if ($user['role'] === 'student' && student_account_access_status($user) === 'approval_pending') {
+          $error = 'Your student account is waiting for Chairperson approval.';
         } elseif ($user['role'] === 'adviser' && empty($user['email_verified_at'])) {
           session_regenerate_id(true);
           $otpResult = fuzzy_otp_begin($pdo, (int) $user['id'], (string) $user['email'], 'adviser_login');

@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/student_auth.php';
-$user = require_verified_student($pdo);
+$user = require_approved_student($pdo);
 $studentId = (int) $user['id'];
 $submissionId = (int) ($_GET['id'] ?? 0);
 $stmt = $pdo->prepare('SELECT * FROM student_submissions WHERE id = ? AND student_id = ? LIMIT 1');

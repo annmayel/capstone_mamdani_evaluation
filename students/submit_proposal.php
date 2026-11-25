@@ -4,7 +4,7 @@ require_once __DIR__ . '/../php/email_notifications.php';
 require_once __DIR__ . '/../php/project_links.php';
 require_once __DIR__ . '/../php/student_auth.php';
 require_once __DIR__ . '/../php/submissions.php';
-$user = require_verified_student($pdo);
+$user = require_approved_student($pdo);
 $studentId = (int) $user['id'];
 $redirect = 'student_dashboard.php?view=proposal';
 
