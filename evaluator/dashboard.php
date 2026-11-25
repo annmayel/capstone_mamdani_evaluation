@@ -135,7 +135,7 @@ $displayEmail = $evaluatorEmail ?: 'No email available';
                 <td><?=esc($p['defense_date'])?></td>
                 <td><span style="color: #F59E0B; font-weight: 600;"> <?=esc(ucwords(str_replace('_', ' ', $p['assignment_status'] ?? 'assigned')))?> </span></td>
                 <td>
-                  <a href="evaluate_project.php?project_id=<?=esc($p['id'])?>" class="btn primary" style="padding: 6px 12px;">Evaluate Submission</a>
+                  <a href="evaluate_selection.php?project_id=<?=esc($p['id'])?>" class="btn primary" style="padding: 6px 12px;">Evaluate Submission</a>
                 </td>
               </tr>
             <?php endforeach; ?>

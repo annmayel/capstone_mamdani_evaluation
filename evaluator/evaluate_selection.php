@@ -21,7 +21,7 @@ try {
         && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
     $finalReady = $finalSubmission
         && (int) ($finalSubmission['project_id'] ?? 0) === $projectId
-        && in_array($finalSubmission['status'], ['submitted', 'under_evaluation'], true)
+        && in_array($finalSubmission['status'], ['submitted', 'under_evaluation', 'accepted', 'revision_required'], true)
         && !empty($finalSubmission['stored_filename'])
         && is_file($storage . $finalSubmission['stored_filename'])
         && proposal_allows_final_submission($project, $proposalSubmission);
@@ -38,7 +38,7 @@ $email = trim((string) ($user['email'] ?? ''));
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Final Hearing Access</title>
+  <title>Select Evaluation Type</title>
   <link rel="stylesheet" href="../assets/style.css?v=20261124">
   <link rel="stylesheet" href="evaluator-content.css?v=20261124">
   <link rel="stylesheet" href="evaluator-typography.css?v=20261124">
@@ -55,14 +55,16 @@ $email = trim((string) ($user['email'] ?? ''));
   <main class="main-content selection-main">
     <div class="evaluator-topbar"><button class="mobile-menu-toggle" type="button" aria-label="Open navigation menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div class="evaluator-topbar-end"><div class="account-avatar"><?=esc(strtoupper(substr($name ?: 'E',0,1)))?></div><span><?=esc($name)?></span></div></div>
     <a class="selection-back" href="projects.php">← Back to Assigned Projects</a>
-    <header class="main-header selection-header"><div class="main-header-text"><span class="page-eyebrow">Evaluation workspace</span><h1>Final Hearing Access</h1><p>Proposal evaluation opens directly from the Evaluation Workspace. Final Hearing remains separate for <?=esc($project['title'])?>.</p></div></header>
+    <header class="main-header selection-header"><div class="main-header-text"><span class="page-eyebrow">Evaluation workspace</span><h1>Select Evaluation Type</h1><p>Choose the appropriate evaluation workflow for <?=esc($project['title'])?>.</p></div></header>
+    <?php if (($_GET['evaluation_error'] ?? '') === 'proposal_not_submitted'): ?><div class="e3-alert error" role="alert">A valid submitted Proposal PDF is required before proposal scoring can begin.</div><?php endif; ?>
+    <?php if (($_GET['evaluation_error'] ?? '') === 'final_not_submitted'): ?><div class="e3-alert error" role="alert">A valid Final Paper and the approved-proposal prerequisites are required for Final Hearing.</div><?php endif; ?>
     <section class="selection-grid" aria-label="Evaluation type">
-      <a class="selection-card" href="evaluate_project.php?project_id=<?=$projectId?>">
+      <?php if ($proposalReady): ?><a class="selection-card" href="evaluate_project.php?project_id=<?=$projectId?>&amp;proposal_submission_id=<?=esc($proposalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon proposal-icon" aria-hidden="true"><span>▱</span></div>
         <div class="selection-card-copy"><span class="selection-label">Proposal stage · <?=esc($proposalStatusLabel)?></span><h2>Proposal Evaluation</h2><p>Record the proposal verdict and comments before project development.</p></div>
-        <span class="selection-action">Evaluate Submission <b>→</b></span>
-      </a>
-      <?php if ($finalReady): ?><a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
+        <span class="selection-action"><?=$proposalReady ? 'Start Proposal Evaluation' : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
+      <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>
+      <?php if ($finalReady): ?><a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon hearing-icon" aria-hidden="true"><span>✓</span></div>
         <div class="selection-card-copy"><span class="selection-label">Final hearing · <?=esc($finalStatusLabel)?></span><h2>Final Hearing Evaluation</h2><p>Evaluate the capstone project using the CEIT-UR-E3 final hearing rubric.</p></div>
         <span class="selection-action"><?=$finalReady ? 'Start Final Hearing Evaluation' : 'Waiting for Final Paper'?> <b><?=$finalReady ? '→' : '&#128274;'?></b></span>

@@ -7,6 +7,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 
 $projectId = (int) ($_GET['project_id'] ?? 0);
+$requestedSubmissionId = (int) ($_GET['proposal_submission_id'] ?? 0);
 $evaluatorId = (int) $_SESSION['user']['id'];
 $stmt = $pdo->prepare('SELECT p.*, a.status AS assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id=p.id WHERE p.id=? AND a.evaluator_id=? LIMIT 1');
 $stmt->execute([$projectId, $evaluatorId]);
@@ -14,9 +15,10 @@ $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 
 $submission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
-if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId) {
+if (!$submission || (int) ($submission['project_id'] ?? 0) !== $projectId
+    || ($requestedSubmissionId > 0 && (int) $submission['id'] !== $requestedSubmissionId)) {
     error_log('[proposal evaluation] No usable proposal PDF for assigned project ' . $projectId . '.');
-    header('Location: projects.php?evaluation_error=proposal_not_submitted');
+    header('Location: evaluate_selection.php?project_id=' . $projectId . '&evaluation_error=proposal_not_submitted');
     exit;
 }
 $schemaReady = proposal_evaluation_schema_available($pdo);
@@ -124,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['proposal_flash'] = $status === 'submitted'
                     ? 'Proposal evaluation submitted.'
                     : 'Proposal evaluation draft saved.';
-                header('Location: evaluate_project.php?project_id=' . $projectId);
+                header('Location: evaluate_project.php?project_id=' . $projectId . '&proposal_submission_id=' . (int) $submission['id']);
                 exit;
             } catch (Throwable $exception) {
                 if ($pdo->inTransaction()) $pdo->rollBack();

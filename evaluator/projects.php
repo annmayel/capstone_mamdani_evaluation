@@ -92,7 +92,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                     <td class="title-cell"><span class="project-title"><?=esc($title)?></span></td><td><?=esc($group ?: 'Not set')?></td><td><?=esc($adviser ?: 'Not assigned')?></td>
                     <td><?= $defenseDate !== '' ? esc(date('M j, Y', strtotime($defenseDate))) : '<span class="muted-cell">Not set</span>' ?></td>
                     <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span></td>
-                    <td><a class="action-link" href="evaluate_project.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a></td>
+                    <td><a class="action-link" href="evaluate_selection.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a></td>
                   </tr>
                 <?php endforeach; ?>
                 <tr class="no-results-row" data-no-results hidden><td colspan="6">No projects match these filters. Adjust or reset your filters.</td></tr>
