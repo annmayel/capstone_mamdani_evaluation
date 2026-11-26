@@ -203,8 +203,8 @@ $revisionProgressLabel = match ($revisionUploadState) {
               <div><small>Panel Evaluation Status</small><strong><?=esc($panelStatusLabel)?></strong><span><?=esc((string) ($proposalPanel['submitted_count'] ?? 0))?> of <?=esc((string) ($proposalPanel['assigned_count'] ?? 0))?> evaluators submitted</span></div>
             </div>
 
-            <?php if ($majorRevisionRequired): ?>
-              <div class="major-revision-notice" role="status"><span aria-hidden="true">!</span><div><h3>Major Revision Required</h3><p>Address the original panel's comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.</p></div></div>
+            <?php if ($majorRevisionRequired || $revisionCycle): ?>
+              <div class="major-revision-notice" role="status"><span aria-hidden="true"><?= $revisionUploadState === 'accepted' ? '✓' : '!' ?></span><div><h3><?= $revisionUploadState === 'accepted' ? 'Revision Accepted' : 'Major Revision Required' ?></h3><p><?= $revisionUploadState === 'accepted' ? 'The original panel accepted your revised proposal. Final Paper submission remains locked until the IT Chairperson formally accepts the revision and opens the next stage.' : 'Address the original panel\'s comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.' ?></p></div></div>
               <ol class="revision-progress" aria-label="Revision workflow progress">
                 <?php $steps = [1 => ['Major Revision Required', 'Review panel feedback'], 2 => ['Submit Revised Proposal', 'Upload your revised document'], 3 => ['Pending Panel Re-evaluation', 'Original panel is reviewing'], 4 => ['Revision Accepted or Returned', 'Panel decision recorded']]; ?>
                 <?php foreach ($steps as $number => [$title, $detail]): ?><li class="<?=$number < $revisionProgressStep ? 'is-complete' : ($number === $revisionProgressStep ? 'is-current' : '')?>"><span><?= $number < $revisionProgressStep ? '✓' : $number ?></span><div><strong><?=esc($title)?></strong><small><?=esc($detail)?></small></div></li><?php endforeach; ?>

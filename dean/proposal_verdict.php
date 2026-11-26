@@ -33,7 +33,7 @@ $canAcceptRevisions = $published
         || (($project['proposal_official_verdict'] ?? '') === 'PASSED/APPROVED (No Revision)' && trim((string) ($project['proposal_required_revisions'] ?? '')) !== '')
     )
     && $submissionReady
-    && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
+    && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation', 'accepted'], true)
     && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
 
 if ($project) {

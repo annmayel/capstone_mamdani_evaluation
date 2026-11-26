@@ -1,0 +1,27 @@
+.revision-review-page .selection-back { display:inline-flex; margin:0 0 14px; color:#315f60; font-size:12px; font-weight:650; text-decoration:none; }
+.revision-review-page .revision-header { align-items:flex-start; }
+.revision-review-page .revision-header > .status-pill { margin-top:7px; }
+.revision-review-page .revision-panel { margin-bottom:18px; }
+.revision-review-page .revision-panel .work-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+.revision-review-page .revision-panel h2 { margin:3px 0 5px; color:#173f40; font-size:20px; }
+.revision-review-page .revision-panel p { color:#607476; font-size:12px; line-height:1.55; }
+.revision-review-page .revision-meta { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:18px 20px; border-top:1px solid #eee8e1; }
+.revision-review-page .revision-file { display:flex; align-items:center; min-width:0; gap:12px; }
+.revision-review-page .revision-file-mark { display:grid; place-items:center; flex:0 0 40px; width:40px; height:40px; border-radius:6px; background:#fbece8; color:#b94939; font-size:10px; font-weight:800; }
+.revision-review-page .revision-file strong,.revision-review-page .revision-file span { display:block; overflow-wrap:anywhere; }
+.revision-review-page .revision-file strong { color:#264849; font-size:13px; }
+.revision-review-page .revision-file span { margin-top:3px; color:#718184; font-size:11px; }
+.revision-review-page .revision-resource-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; padding:0 20px 20px; }
+.revision-review-page .revision-resource-links a { display:block; padding:11px 12px; border:1px solid #e5ded7; border-radius:6px; background:#fcfbf9; color:#28575a; text-decoration:none; }
+.revision-review-page .revision-resource-links strong,.revision-review-page .revision-resource-links small { display:block; }
+.revision-review-page .revision-resource-links strong { font-size:11px; }.revision-review-page .revision-resource-links small { margin-top:3px; overflow:hidden; color:#718184; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.revision-review-page .revision-feedback-list { display:grid; gap:11px; padding:0 20px 20px; }
+.revision-review-page .revision-feedback-card { padding:15px; border-left:3px solid #d6ad75; background:#fbfaf8; }
+.revision-review-page .revision-feedback-card h3 { margin:0 0 9px; color:#244849; font-size:13px; }.revision-review-page .revision-feedback-card p { margin:8px 0 0; white-space:pre-line; }.revision-review-page .revision-feedback-card p strong { display:block; margin-bottom:2px; color:#3b5a5c; font-size:11px; }
+.revision-review-page .revision-decision { padding:0 20px 22px; }
+.revision-review-page .revision-choice { display:flex; gap:11px; align-items:flex-start; padding:13px; margin:0 0 9px; border:1px solid #e4ddd5; border-radius:6px; cursor:pointer; }.revision-review-page .revision-choice:hover { border-color:#8eaeaa; background:#f8fbfa; }.revision-review-page .revision-choice input { margin-top:3px; accent-color:#1a6a5b; }.revision-review-page .revision-choice strong,.revision-review-page .revision-choice small { display:block; }.revision-review-page .revision-choice strong { color:#234848; font-size:13px; }.revision-review-page .revision-choice small { margin-top:3px; color:#718184; font-size:11px; }
+.revision-review-page .revision-decision fieldset { margin:0; padding:0; border:0; }.revision-review-page .revision-decision legend,.revision-review-page .revision-comment span { display:block; margin-bottom:8px; color:#385b5d; font-size:11px; font-weight:700; }
+.revision-review-page .revision-comment { display:block; margin-top:17px; }.revision-review-page .revision-comment textarea { box-sizing:border-box; width:100%; resize:vertical; padding:11px; border:1px solid #ded8d0; border-radius:6px; color:#264849; font:500 12px 'Poppins',sans-serif; }.revision-review-page .revision-comment textarea:focus { border-color:#57817f; outline:3px solid rgba(54,113,109,.12); }.revision-review-page .revision-comment small { display:block; margin-top:5px; color:#778585; font-size:10px; }
+.revision-review-page .revision-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:17px; }.revision-review-page .revision-actions .btn { min-height:39px; }.revision-review-page .revision-actions span { color:#6d7f80; font-size:10px; }
+.revision-review-page .revision-final { padding:19px 20px 22px; }.revision-review-page .revision-final p { max-width:850px; margin:12px 0 0; white-space:pre-line; }.revision-review-page .revision-progress { color:#5c7273; font-size:11px; text-align:right; }
+@media (max-width:720px) { .revision-review-page .revision-header > .status-pill { margin-top:0; }.revision-review-page .revision-panel .work-panel-head,.revision-review-page .revision-meta { align-items:flex-start; flex-direction:column; }.revision-review-page .revision-progress { text-align:left; }.revision-review-page .revision-meta { padding:15px; }.revision-review-page .revision-resource-links,.revision-review-page .revision-feedback-list,.revision-review-page .revision-decision,.revision-review-page .revision-final { padding-right:15px; padding-left:15px; } }
