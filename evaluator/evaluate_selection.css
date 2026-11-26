@@ -18,4 +18,6 @@
 .selection-card.is-locked:hover { transform:none; border-color:#e8dfd7; box-shadow:0 12px 30px rgba(27,49,48,.055); }
 .selection-card.is-locked .selection-action { color:#718184; }
 .selection-card.is-locked .selection-action b { font-size:14px; }
+.selection-card[data-final-action] .selection-action { font-size:0; }
+.selection-card[data-final-action] .selection-action::before { content:attr(data-final-action); font-size:12px; }
 @media(max-width:720px){.selection-grid{grid-template-columns:1fr}.selection-card{min-height:260px;padding:22px}.selection-card-icon{width:58px;height:58px;margin-bottom:24px}}

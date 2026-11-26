@@ -94,14 +94,21 @@ function e3_stage_verdict_from_score(float $score): array
     ];
 }
 
-function e3_validate_scores(array $input): array
+function e3_validate_scores(array $input, bool $requireComplete = true): array
 {
     $scores = [];
     $errors = [];
     foreach (e3_criteria() as $code => $criterion) {
         $key = $criterion['key'];
         $raw = $input[$key] ?? null;
-        if (!is_string($raw) || $raw === '' || !preg_match('/^(?:\d+(?:\.\d{1,2})?)$/', trim($raw))) {
+        if (!is_string($raw) || trim($raw) === '') {
+            if ($requireComplete) {
+                $errors[] = $code . ' ' . $criterion['label'] . ' is required and must be numeric.';
+            }
+            $scores[$key] = null;
+            continue;
+        }
+        if (!preg_match('/^(?:\d+(?:\.\d{1,2})?)$/', trim($raw))) {
             $errors[] = $code . ' ' . $criterion['label'] . ' is required and must be numeric.';
             continue;
         }
@@ -112,8 +119,8 @@ function e3_validate_scores(array $input): array
         }
         $scores[$key] = round($value, 2);
     }
-    $total = array_sum($scores);
-    if (count($scores) === 12 && (!is_finite($total) || $total > 100)) {
+    $total = array_sum(array_map(static fn($score): float => (float) ($score ?? 0), $scores));
+    if (count(array_filter($scores, static fn($score): bool => $score !== null)) === count(e3_criteria()) && (!is_finite($total) || $total > 100)) {
         $errors[] = 'The total score cannot exceed 100.';
     }
     return ['scores' => $scores, 'total' => round($total, 2), 'errors' => $errors];

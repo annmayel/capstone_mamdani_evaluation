@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
+require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/submissions.php';
 require_once __DIR__ . '/../php/proposal_revisions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
@@ -17,6 +18,9 @@ foreach ($projects as &$project) {
     $project['proposal_submission_id'] = null;
     $project['proposal_panel_complete'] = false;
     $project['revision_cycle_id'] = null;
+    $project['final_submission_id'] = null;
+    $project['evaluator_final_status'] = 'waiting_final_paper';
+    $project['final_panel_complete'] = false;
     try {
         $latestSubmission = latest_stored_pdf_stage_submission($pdo, (int) $project['id'], 'proposal');
         if ($latestSubmission) {
@@ -50,6 +54,13 @@ foreach ($projects as &$project) {
                 $project['proposal_submission_id'] = (int) $evaluation['saved_submission_id'];
                 break;
             }
+            if ($project['evaluator_proposal_status'] === 'assigned' && $latestSubmission) {
+                $draftStmt = $pdo->prepare('SELECT status FROM proposal_evaluations WHERE project_id=? AND proposal_submission_id=? AND evaluator_id=? ORDER BY id DESC LIMIT 1');
+                $draftStmt->execute([(int) $project['id'], (int) $latestSubmission['id'], $evaluatorId]);
+                if ($draftStmt->fetchColumn() === 'draft') {
+                    $project['evaluator_proposal_status'] = 'draft';
+                }
+            }
         }
         if ($proposalSchemaReady && !empty($project['proposal_submission_id'])) {
             $panel = proposal_panel_completion($pdo, (int) $project['id'], (int) $project['proposal_submission_id']);
@@ -59,6 +70,21 @@ foreach ($projects as &$project) {
             $reviewStmt = $pdo->prepare("SELECT c.id FROM proposal_revision_cycles c INNER JOIN proposal_revision_reviews r ON r.revision_cycle_id=c.id WHERE c.project_id=? AND c.status IN ('pending_panel_review','returned') AND r.evaluator_id=? AND r.decision='pending' ORDER BY c.id DESC LIMIT 1");
             $reviewStmt->execute([(int)$project['id'],$evaluatorId]);
             $project['revision_cycle_id'] = $reviewStmt->fetchColumn() ?: null;
+        }
+        $finalSubmission = latest_stored_pdf_stage_submission($pdo, (int) $project['id'], 'final');
+        if ($finalSubmission) {
+            $project['final_submission_id'] = (int) $finalSubmission['id'];
+            if (!proposal_allows_final_submission($project, $latestSubmission)) {
+                $project['evaluator_final_status'] = 'proposal_approval_required';
+            } else {
+                $finalEvaluationStmt = $pdo->prepare('SELECT status FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');
+                $finalEvaluationStmt->execute([(int) $project['id'], $evaluatorId, (int) $finalSubmission['id']]);
+                $project['evaluator_final_status'] = (string) ($finalEvaluationStmt->fetchColumn() ?: 'assigned');
+                $finalPanel = e3_consolidated($pdo, (int) $project['id'], (int) $finalSubmission['id']);
+                $assignmentCountStmt = $pdo->prepare('SELECT COUNT(DISTINCT evaluator_id) FROM evaluator_assignments WHERE project_id=?');
+                $assignmentCountStmt->execute([(int) $project['id']]);
+                $project['final_panel_complete'] = $finalPanel['evaluator_count'] > 0 && $finalPanel['evaluator_count'] >= (int) $assignmentCountStmt->fetchColumn();
+            }
         }
     } catch (PDOException $exception) {
         error_log('[evaluator projects] Could not load evaluator proposal state: ' . $exception->getMessage());
@@ -121,7 +147,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
       </header>
       <?php if (($_GET['evaluation_error'] ?? '') === 'proposal_not_submitted'): ?><div class="e3-alert error" role="alert">A valid proposal PDF for this assigned project is not available yet.</div><?php endif; ?>
       <section class="work-panel" aria-labelledby="project-list-title">
-        <div class="work-panel-head"><div><h2 id="project-list-title">Assigned Proposal Submissions</h2><p>Each submission has one unified evaluation sheet.</p></div></div>
+        <div class="work-panel-head"><div><h2 id="project-list-title">Assigned Capstone Projects</h2><p>Proposal and Final Hearing stages remain separate in this workspace.</p></div></div>
         <div class="filters" aria-label="Project filters">
           <div class="filter-field filter-search"><label for="project-search">Search projects</label><input id="project-search" type="search" placeholder="Title, group, or adviser" data-filter="search"></div>
           <div class="filter-field"><label for="project-status">Assignment status</label><select id="project-status" data-filter="status" data-populate="status"><option value="">All statuses</option></select></div>
@@ -136,7 +162,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
         <?php else: ?>
           <div class="table-scroll">
             <table class="data-table" data-evaluator-list aria-describedby="project-range">
-              <thead><tr><th scope="col">Proposal title</th><th scope="col">Group</th><th scope="col">Adviser</th><th scope="col">Defense date</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+              <thead><tr><th scope="col">Project title</th><th scope="col">Group</th><th scope="col">Adviser</th><th scope="col">Defense date</th><th scope="col">Proposal</th><th scope="col">Final Hearing</th><th scope="col">Action</th></tr></thead>
               <tbody>
                 <?php foreach ($projects as $project):
                   $assignmentStatus = strtolower((string)($project['evaluator_proposal_status'] ?? 'assigned'));
@@ -146,15 +172,19 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                   $group = (string)($project['group_name'] ?? '');
                   $adviser = (string)($project['adviser'] ?? '');
                   $defenseDate = (string)($project['defense_date'] ?? '');
+                  $finalStatus = (string) ($project['evaluator_final_status'] ?? 'waiting_final_paper');
+                  $finalLabel = match ($finalStatus) { 'submitted' => 'Submitted', 'draft' => 'Draft', 'assigned' => 'Assigned', 'proposal_approval_required' => 'Proposal approval required', default => 'Waiting for Final Paper' };
+                  $finalClass = $finalStatus === 'submitted' ? 'completed' : (in_array($finalStatus, ['draft', 'assigned'], true) ? 'assigned' : 'muted');
                 ?>
                   <tr data-record data-title="<?=esc($title)?>" data-search="<?=esc($title . ' ' . $group . ' ' . $adviser)?>" data-group="<?=esc($group)?>" data-adviser="<?=esc($adviser)?>" data-date="<?=esc($defenseDate)?>" data-status="<?=esc($assignmentStatus)?>">
                     <td class="title-cell"><span class="project-title"><?=esc($title)?></span></td><td><?=esc($group ?: 'Not set')?></td><td><?=esc($adviser ?: 'Not assigned')?></td>
                     <td><?= $defenseDate !== '' ? esc(date('M j, Y', strtotime($defenseDate))) : '<span class="muted-cell">Not set</span>' ?></td>
                     <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span><?php if (!empty($project['proposal_panel_complete'])): ?><br><small class="muted-cell">Panel Completed</small><?php endif; ?></td>
+                    <td><span class="status-pill status-<?=esc($finalClass)?>"><?=esc($finalLabel)?></span><?php if (!empty($project['final_panel_complete'])): ?><br><small class="muted-cell">Panel Completed</small><?php endif; ?></td>
                     <td><?php if (!empty($project['revision_cycle_id'])): ?><a class="action-link" href="review_proposal_revision.php?cycle_id=<?=esc($project['revision_cycle_id'])?>">Review Revision</a><?php elseif ($assignmentStatus === 'submitted' && !empty($project['proposal_submission_id'])): ?><a class="action-link" href="evaluate_project.php?project_id=<?=esc($project['id'])?>&amp;proposal_submission_id=<?=esc($project['proposal_submission_id'])?>">View Submitted Evaluation</a><?php else: ?><a class="action-link" href="evaluate_selection.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a><?php endif; ?></td>
                   </tr>
                 <?php endforeach; ?>
-                <tr class="no-results-row" data-no-results hidden><td colspan="6">No projects match these filters. Adjust or reset your filters.</td></tr>
+                <tr class="no-results-row" data-no-results hidden><td colspan="7">No projects match these filters. Adjust or reset your filters.</td></tr>
               </tbody>
             </table>
           </div>

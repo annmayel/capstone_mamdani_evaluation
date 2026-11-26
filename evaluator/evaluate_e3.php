@@ -43,10 +43,20 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   elseif($existing&&$existing['status']==='submitted'){$errors[]='This E3 evaluation has already been submitted and cannot be edited.';}
  else{
   foreach($criteria as$code=>$criterion){$key=$criterion['key'];if(array_key_exists($key,$_POST))$form[$key]=(string)$_POST[$key];$commentKey='comment_'.$criterion['key'];$commentValues[$code]=trim((string)($_POST[$commentKey]??''));}
-  $form['remarks']=trim((string)($_POST['remarks']??''));$validation=e3_validate_scores($_POST);
+  $form['remarks']=trim((string)($_POST['remarks']??''));$action=(string)($_POST['action']??'');$isDraft=$action==='draft';$validation=e3_validate_scores($_POST,!$isDraft);
   if(($validation['errors'])){$errors=array_merge($errors,$validation['errors']);}
-  $action=(string)($_POST['flow']??'summary');
-  if(!$errors&&$action==='submit'){
+  $flow=(string)($_POST['flow']??'summary');
+  if(!$errors&&$isDraft){
+   $scores=$validation['scores'];$total=$validation['total'];
+   $commentLines=[];foreach($criteria as$code=>$criterion){if($commentValues[$code]!=='')$commentLines[]=$code.' - '.$commentValues[$code];}
+   $commentText=implode("\n",$commentLines);$remarks=$form['remarks']!==''?$form['remarks']:null;
+   try{$pdo->beginTransaction();$values=[];foreach($criteria as$criterion){$key=$criterion['key'];$values[$key]=$scores[$key]??null;}
+    if($existing){$u=$pdo->prepare('UPDATE e3_evaluations SET fr1_1=?,fr1_2=?,fr1_3=?,fr1_4=?,arc2_1=?,arc2_2=?,arc2_3=?,dp3_1=?,dp3_2=?,pmd4_1=?,pmd4_2=?,pmd4_3=?,total_score=?,remarks=?,revisions=?,status=?,submitted_at=NULL WHERE id=?');$u->execute([$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'draft',(int)$existing['id']]);}
+    else{$i=$pdo->prepare('INSERT INTO e3_evaluations(project_id,evaluator_id,final_submission_id,fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,total_score,remarks,revisions,status,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)');$i->execute([$projectId,$evaluatorId,(int)$finalSubmission['id'],$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'draft']);}
+    $pdo->commit();$_SESSION['e3_flash']='E3 evaluation draft saved.';header('Location: evaluate_e3.php?project_id='.$projectId.'&final_submission_id='.(int)$finalSubmission['id']);exit;
+   }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();log_workflow_database_error('e3_evaluation_draft','save_evaluator_draft',$e);$errors[]='The E3 evaluation draft could not be saved.';}
+  }
+  if(!$errors&&$flow==='submit'){
    $scores=$validation['scores'];$total=$validation['total'];
    $commentLines=[];
    foreach($criteria as$code=>$criterion){if($commentValues[$code]!=='')$commentLines[]=$code.' — '.$commentValues[$code];}
@@ -107,7 +117,7 @@ $verdict=!$currentValidation['errors']?e3_stage_verdict_from_score($rawTotal):nu
 <section class="rubric-row"><div class="rubric-code"><?=esc($code)?></div><div class="rubric-copy"><h3><?=esc($criterion['label'])?></h3><p><?=esc($criterion['description'])?></p></div><label class="rubric-score"><span>Score · max <?=esc($criterion['maximum'])?></span><input type="number" name="<?=esc($criterion['key'])?>" min="0" max="<?=esc($criterion['maximum'])?>" step="0.01" value="<?=esc($fieldValue($criterion['key']))?>" <?=$evaluationLocked?'disabled':'required'?>></label><label class="rubric-comment"><span>Comment</span><textarea name="comment_<?=esc($criterion['key'])?>" rows="3" placeholder="Add criterion comment" <?=$evaluationLocked?'disabled':''?>><?=esc($commentValues[$code])?></textarea></label></section>
 <?php endforeach;?>
 <label class="rubric-general"><span>Revisions, comments and recommendations</span><textarea name="remarks" rows="5" <?=$evaluationLocked?'disabled':''?>><?=esc($fieldValue('remarks'))?></textarea></label>
-<div class="rubric-footer"><div class="rubric-total"><span>Total Raw Score</span><strong id="e3-total"><?=number_format($rawTotal,2)?><small>/100</small></strong></div><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_selection.php?project_id=<?=$projectId?>">Cancel</a><?php if(!$evaluationLocked):?><button class="e3-btn primary" type="submit">Review Summary</button><?php else:?><strong class="e3-locked-message">Evaluation is locked</strong><?php endif;?></div></div></form>
+<div class="rubric-footer"><div class="rubric-total"><span>Total Raw Score</span><strong id="e3-total"><?=number_format($rawTotal,2)?><small>/100</small></strong></div><div class="e3-actions"><a class="e3-btn secondary" href="evaluate_selection.php?project_id=<?=$projectId?>">Cancel</a><?php if(!$evaluationLocked):?><button class="e3-btn secondary" type="submit" name="action" value="draft">Save Draft</button><button class="e3-btn primary" type="submit">Review Summary</button><?php else:?><strong class="e3-locked-message">Evaluation is locked</strong><?php endif;?></div></div></form>
 <?php else:?>
 <section class="summary-layout"><div class="summary-breakdown"><h2>Score Breakdown</h2><?php foreach($categoryTotals as$cat=>$max):?><div class="breakdown-row"><div><span><?=esc($cat)?></span><small>Max <?= $max ?> points</small></div><strong><?=number_format($categoryScores[$cat]??0,2)?> <small>/ <?= $max ?></small></strong></div><div class="breakdown-track"><i style="width:<?= $max?min(100,(($categoryScores[$cat]??0)/$max)*100):0?>%"></i></div><?php endforeach;?><div class="raw-score-card"><span>Total Raw Score</span><strong><?=number_format($rawTotal,2)?> <small>/ 100</small></strong></div></div>
 <aside class="mamdani-card"><span class="summary-label">Mamdani Result</span><strong><?=esc($trace?$trace['defuzz']:($verdict?$rawTotal:'0.00'))?><small>/100</small></strong><p><?=esc($trace?$trace['rating']:($verdict?$verdict['label']:''))?></p></aside></section>

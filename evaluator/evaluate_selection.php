@@ -15,6 +15,9 @@ $finalSubmission = null;
 $proposalReady = false;
 $proposalSubmitted = false;
 $finalReady = false;
+$finalSubmitted = false;
+$finalDraft = false;
+$finalLockReason = 'Waiting for Final Paper';
 try {
     $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
     $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
@@ -34,11 +37,31 @@ try {
         && $finalPdf !== null
         && is_file($finalPdf)
         && proposal_allows_final_submission($project, $proposalSubmission);
+    if ($finalReady) {
+        $finalEvaluationStmt = $pdo->prepare('SELECT status FROM e3_evaluations WHERE project_id=? AND final_submission_id=? AND evaluator_id=? ORDER BY id DESC LIMIT 1');
+        $finalEvaluationStmt->execute([$projectId, (int) $finalSubmission['id'], $evaluatorId]);
+        $finalEvaluationStatus = (string) ($finalEvaluationStmt->fetchColumn() ?: '');
+        $finalSubmitted = $finalEvaluationStatus === 'submitted';
+        $finalDraft = $finalEvaluationStatus === 'draft';
+    } elseif (!$finalSubmission) {
+        $finalLockReason = 'Waiting for Final Paper';
+    } elseif (!proposal_allows_final_submission($project, $proposalSubmission)) {
+        $finalLockReason = 'Proposal approval required';
+    } elseif ($finalPdf === null || !is_file($finalPdf)) {
+        $finalLockReason = 'Final PDF unavailable';
+    } else {
+        $finalLockReason = 'Final Hearing unavailable';
+    }
 } catch (PDOException $exception) {
     error_log('[evaluation selection] Stage submission records are unavailable: ' . $exception->getMessage());
 }
 $proposalStatusLabel = stage_submission_status_label($proposalSubmission);
 $finalStatusLabel = stage_submission_status_label($finalSubmission);
+if ($finalSubmitted) {
+    $finalStatusLabel = 'Evaluation Submitted';
+} elseif ($finalDraft) {
+    $finalStatusLabel = 'Draft Saved';
+}
 $user = $_SESSION['user'];
 $name = trim((string) ($user['full_name'] ?? 'Evaluator'));
 $email = trim((string) ($user['email'] ?? ''));
@@ -73,7 +96,8 @@ $email = trim((string) ($user['email'] ?? ''));
         <div class="selection-card-copy"><span class="selection-label"><?=$proposalSubmitted ? 'Evaluation Submitted' : 'Proposal stage · ' . $proposalStatusLabel?></span><h2>Proposal Evaluation</h2><p><?=$proposalSubmitted ? 'View your submitted CEIT-T07A score sheet and feedback.' : 'Record the proposal verdict and comments before project development.'?></p></div>
         <span class="selection-action"><?=$proposalReady ? ($proposalSubmitted ? 'View Submitted Evaluation' : 'Start Proposal Evaluation') : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
       <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>
-      <?php if ($finalReady): ?><a class="selection-card" href="evaluate_e3.php?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
+      <?php $finalActionLabel = $finalSubmitted ? 'View Submitted Evaluation' : ($finalDraft ? 'Continue Draft' : 'Start Final Hearing Evaluation'); ?>
+      <?php if ($finalReady): ?><a class="selection-card" data-final-action="<?=esc($finalActionLabel)?>" href="evaluate_e3.php?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" data-final-action="<?=esc($finalLockReason)?>" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon hearing-icon" aria-hidden="true"><span>✓</span></div>
         <div class="selection-card-copy"><span class="selection-label">Final hearing · <?=esc($finalStatusLabel)?></span><h2>Final Hearing Evaluation</h2><p>Evaluate the capstone project using the CEIT-UR-E3 final hearing rubric.</p></div>
         <span class="selection-action"><?=$finalReady ? 'Start Final Hearing Evaluation' : 'Waiting for Final Paper'?> <b><?=$finalReady ? '→' : '&#128274;'?></b></span>
