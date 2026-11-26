@@ -5,6 +5,7 @@ require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/proposal_revisions.php';
 
 $user = require_approved_student($pdo);
 $studentId = (int) $user['id'];
@@ -24,6 +25,10 @@ $proposalPercentage = null;
 $proposalRecommendation = null;
 $proposalPanel = null;
 $proposalEvaluatorNames = [];
+$revisionCycle = null;
+$revisionSummary = null;
+$majorRevisionRequired = false;
+$revisionNumbersBySubmission = [];
 $proposalCriteria = proposal_criteria();
 $formatDate = static fn($date) => $date ? date('M d, Y g:i A', strtotime($date)) : 'Not set';
 $storage = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR;
@@ -55,6 +60,26 @@ if ($project) {
             error_log('[student proposal] Panel proposal result could not be loaded: ' . $exception->getMessage());
         }
     }
+    if (proposal_revision_schema_available($pdo)) {
+        $revisionCycle = proposal_revision_cycle($pdo, (int) $project['id']);
+        if ($revisionCycle) $revisionSummary = proposal_revision_review_summary($pdo, (int) $revisionCycle['id']);
+        $revisionHistoryStmt = $pdo->prepare('SELECT revision_submission_id, revision_number FROM proposal_revision_cycles WHERE project_id=?');
+        $revisionHistoryStmt->execute([(int) $project['id']]);
+        foreach ($revisionHistoryStmt->fetchAll(PDO::FETCH_ASSOC) as $revisionRow) $revisionNumbersBySubmission[(int) $revisionRow['revision_submission_id']] = (int) $revisionRow['revision_number'];
+    }
+    if ($revisionCycle && $proposalRecommendation === null && proposal_evaluation_schema_available($pdo)) {
+        $originalPanel = proposal_panel_completion($pdo, (int) $project['id'], (int) $revisionCycle['original_submission_id']);
+        if ($originalPanel['ready']) {
+            $consolidated = $originalPanel['consolidated'];
+            $proposalEvaluations = $consolidated['evaluations'];
+            $proposalPanelTotal = $consolidated['calculated_score'];
+            $proposalPercentage = $consolidated['calculated_score'];
+            $proposalRecommendation = $consolidated['recommendation'];
+            $proposalEvaluatorNames = proposal_evaluator_names($pdo, $proposalEvaluations);
+        }
+    }
+    $majorRevisionRequired = (bool) ($proposalRecommendation && proposal_is_major_revision($proposalRecommendation))
+        || ($revisionCycle && in_array($revisionCycle['status'], ['pending_panel_review', 'returned'], true));
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
     $finalVerdictStmt->execute([(int) $project['id']]);
@@ -77,8 +102,11 @@ if ($project) {
 $latestProposalStatus = stage_submission_status_label($proposalSubmission);
 $latestFinalStatus = stage_submission_status_label($finalSubmission);
 $finalUnlocked = $project && proposal_allows_final_submission($project, $proposalSubmission);
-$proposalUploadAllowed = !$proposalSubmission || empty($proposalSubmission['stored_filename'])
-    || in_array($proposalSubmission['status'], ['revision_required', 'revision_requested'], true);
+$proposalUploadAllowed = $majorRevisionRequired
+    ? (!$revisionCycle || ($revisionCycle['status'] === 'returned'
+        && $revisionSummary !== null && $revisionSummary['pending_count'] === 0))
+    : (!$proposalSubmission || empty($proposalSubmission['stored_filename'])
+        || in_array($proposalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $finalUploadAllowed = $finalUnlocked && (!$finalSubmission || in_array($finalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $displayName = $user['full_name'] ?? 'Student';
 $initial = strtoupper(substr($displayName, 0, 1));
@@ -153,14 +181,14 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
                 <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
                 <input type="hidden" name="stage" value="proposal">
                 <div class="submission-title-field"><label for="proposal-title">Project title</label><input id="proposal-title" name="project_title" type="text" value="<?=esc($project['title'])?>" required></div>
-                <div class="proposal-upload"><label for="proposal-file">Proposal Paper PDF</label><div class="proposal-upload-surface"><span class="proposal-upload-icon" aria-hidden="true">↑</span><strong>Choose your proposal PDF</strong><span>PDF only · Maximum 10 MB</span><input id="proposal-file" name="proposal" type="file" accept="application/pdf" required></div></div>
+                <div class="proposal-upload"><label for="proposal-file"><?=$majorRevisionRequired ? 'Revised Proposal PDF' : 'Proposal Paper PDF'?></label><div class="proposal-upload-surface"><span class="proposal-upload-icon" aria-hidden="true">↑</span><strong><?=$majorRevisionRequired ? 'Choose your revised proposal PDF' : 'Choose your proposal PDF'?></strong><span>PDF only · Maximum 10 MB</span><input id="proposal-file" name="proposal" type="file" accept="application/pdf" required></div></div>
                 <fieldset class="proposal-resources">
                   <legend>Project resources</legend>
                   <div class="proposal-resource-row"><span class="proposal-resource-icon" aria-hidden="true">↗</span><div class="submission-resource-field"><label for="google-drive-url">Google Drive project link</label><input id="google-drive-url" name="google_drive_url" type="url" value="<?=esc($project['google_drive_url'] ?? '')?>" placeholder="https://drive.google.com/..."></div></div>
                   <div class="proposal-resource-row"><span class="proposal-resource-icon proposal-github-icon" aria-hidden="true">⌘</span><div class="submission-resource-field"><label for="github-url">GitHub project link</label><input id="github-url" name="github_url" type="url" value="<?=esc($project['github_url'] ?? '')?>" placeholder="https://github.com/..."></div></div>
                   <div class="proposal-resource-row"><span class="proposal-resource-icon" aria-hidden="true">↗</span><div class="submission-resource-field"><label for="other-project-url">Other project link</label><input id="other-project-url" name="other_project_url" type="url" maxlength="1000" value="<?=esc($project['other_project_url'] ?? '')?>" placeholder="https://example.com/..."></div></div>
                 </fieldset>
-                <div class="proposal-form-footer"><small>Upload a revised paper only after the Chairperson requests corrections.</small><button class="btn primary" type="submit"><?=$proposalSubmission ? 'Upload Revised Proposal' : 'Submit Proposal Paper'?></button></div>
+                <div class="proposal-form-footer"><small><?=$majorRevisionRequired ? 'This revision will be sent to the original assigned panel evaluators for review.' : 'Upload a revised paper only after corrections are requested.'?></small><button class="btn primary" type="submit"><?=$proposalSubmission ? 'Upload Revised Proposal' : 'Submit Proposal Paper'?></button></div>
               </form>
             <?php else: ?>
               <p class="submission-help">A submitted proposal cannot be replaced while it is under evaluation or awaiting the Chairperson’s official decision.</p>
@@ -224,6 +252,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
               <?php if (!empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson record: <?=esc($project['proposal_official_verdict'])?></strong><p>Confirmed <?=esc($formatDate($project['proposal_confirmed_at']))?></p></div><?php endif; ?>
               <?php if (!empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
               <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+              <?php if ($majorRevisionRequired): ?><div class="proposal-student-revisions"><strong>Major Revision Workflow</strong><p>1. Major Revision Required · 2. <?=$revisionCycle ? 'Revised Proposal Submitted' : 'Submit Revised Proposal'?> · 3. <?=$revisionCycle && $revisionCycle['status'] === 'pending_panel_review' ? 'Pending Panel Re-evaluation' : 'Panel Re-evaluation'?> · 4. <?=$revisionCycle ? esc(ucwords(str_replace('_', ' ', $revisionCycle['status']))) : 'Revision Accepted or Returned'?></p><?php if ($revisionSummary): ?><p><?=$revisionSummary['accepted_count']?> accepted · <?=$revisionSummary['pending_count']?> pending · <?=$revisionSummary['returned_count']?> returned</p><?php foreach ($revisionSummary['reviews'] as $review): if (($review['decision'] ?? 'pending') !== 'pending'): ?><p><strong><?=esc($review['full_name'])?>:</strong> <?=esc(ucfirst($review['decision']))?><?php if (!empty($review['comments'])): ?><br><?=nl2br(esc($review['comments']))?><?php endif; ?></p><?php endif; endforeach; ?><?php endif; ?></div><?php endif; ?>
             <?php endif; ?>
           </section>
 
@@ -251,7 +280,8 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
               <div class="submission-history-list">
                 <?php foreach ($submissions as $submission): ?>
                   <div class="current-submission">
-                    <div><strong><?=esc($submission['original_filename'])?></strong><small><?=esc(ucfirst($submission['stage'] === 'final' ? 'Final Paper' : 'Proposal Paper'))?> · <?=esc($formatDate($submission['created_at']))?> · <?=esc(stage_submission_status_label($submission))?></small></div>
+                    <?php $submissionLabel = $submission['stage'] === 'final' ? 'Final Paper' : (isset($revisionNumbersBySubmission[(int) $submission['id']]) ? 'Revised Proposal (Rev. ' . $revisionNumbersBySubmission[(int) $submission['id']] . ')' : 'Original Proposal'); ?>
+                    <div><strong><?=esc($submission['original_filename'])?></strong><small><?=esc($submissionLabel)?> · <?=esc($formatDate($submission['created_at']))?> · <?=esc(stage_submission_status_label($submission))?></small></div>
                     <?php if (!empty($submission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($submission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php elseif (!empty($submission['submission_url'])): ?><a class="btn ghost" href="<?=esc($submission['submission_url'])?>" target="_blank" rel="noopener">Open Link</a><?php endif; ?>
                   </div>
                 <?php endforeach; ?>

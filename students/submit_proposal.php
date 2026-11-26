@@ -4,6 +4,7 @@ require_once __DIR__ . '/../php/email_notifications.php';
 require_once __DIR__ . '/../php/project_links.php';
 require_once __DIR__ . '/../php/student_auth.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/proposal_revisions.php';
 $user = require_approved_student($pdo);
 $studentId = (int) $user['id'];
 $redirect = 'student_dashboard.php?view=proposal';
@@ -32,11 +33,28 @@ $projectStmt->execute([(int) $projectId, $studentId]);
 $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
 $latestProposal = latest_stage_submission($pdo, (int) $projectId, 'proposal');
 $latestStageSubmission = latest_stage_submission($pdo, (int) $projectId, $stage);
+$majorRevisionUpload = false;
+$previousRevisionCycle = null;
+if ($stage === 'proposal' && $latestProposal && proposal_revision_schema_available($pdo) && proposal_evaluation_schema_available($pdo)) {
+    $previousRevisionCycle = proposal_revision_cycle($pdo, (int) $projectId);
+    $previousRevisionSummary = $previousRevisionCycle
+        ? proposal_revision_review_summary($pdo, (int) $previousRevisionCycle['id'])
+        : null;
+    if ($previousRevisionCycle && $previousRevisionCycle['status'] === 'returned'
+        && $previousRevisionSummary['pending_count'] === 0) {
+        $majorRevisionUpload = true;
+    }
+    $panel = proposal_panel_completion($pdo, (int) $projectId, (int) $latestProposal['id']);
+    if ($panel['ready'] && proposal_is_major_revision($panel['consolidated']['recommendation'])) {
+        $majorRevisionUpload = !$previousRevisionCycle
+            || ($previousRevisionCycle['status'] === 'returned' && $previousRevisionSummary['pending_count'] === 0);
+    }
+}
 if ($stage === 'final' && !proposal_allows_final_submission($project, $latestProposal)) {
     header('Location: ' . $redirect . '&error=final_locked');
     exit;
 }
-if ($latestStageSubmission && !in_array($latestStageSubmission['status'], ['revision_required', 'revision_requested'], true)
+if (!$majorRevisionUpload && $latestStageSubmission && !in_array($latestStageSubmission['status'], ['revision_required', 'revision_requested'], true)
     && !empty($latestStageSubmission['stored_filename'])) {
     header('Location: ' . $redirect . '&error=submission_locked');
     exit;
@@ -148,6 +166,23 @@ try {
     if ($stage === 'proposal') {
         $pdo->prepare('UPDATE projects SET proposal_revision_accepted_submission_id = NULL WHERE id = ?')->execute([(int) $projectId]);
         $pdo->prepare("UPDATE projects SET status = 'Submitted' WHERE id = ? AND student_id = ? AND status IN ('Draft', 'No proposal submitted')")->execute([(int) $projectId, $studentId]);
+        if ($majorRevisionUpload) {
+            $originalSubmissionId = $previousRevisionCycle ? (int) $previousRevisionCycle['original_submission_id'] : (int) $latestProposal['id'];
+            $assignedStmt = $pdo->prepare("SELECT DISTINCT pe.evaluator_id,u.full_name,u.email FROM proposal_evaluations pe INNER JOIN users u ON u.id=pe.evaluator_id AND u.role='evaluator' WHERE pe.project_id=? AND pe.proposal_submission_id=? AND pe.status='submitted'");
+            $assignedStmt->execute([(int) $projectId, $originalSubmissionId]);
+            $originalPanel = $assignedStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$originalPanel) throw new RuntimeException('The original assigned panel could not be identified for this revision.');
+            $numberStmt = $pdo->prepare('SELECT COALESCE(MAX(revision_number),0)+1 FROM proposal_revision_cycles WHERE project_id=?');
+            $numberStmt->execute([(int) $projectId]);
+            $revisionNumber = (int) $numberStmt->fetchColumn();
+            $cycleStmt = $pdo->prepare('INSERT INTO proposal_revision_cycles (project_id,original_submission_id,revision_submission_id,revision_number) VALUES (?,?,?,?)');
+            $cycleStmt->execute([(int) $projectId, $originalSubmissionId, $submissionId, $revisionNumber]);
+            $cycleId = (int) $pdo->lastInsertId();
+            foreach ($originalPanel as $evaluator) {
+                $pdo->prepare('INSERT INTO proposal_revision_reviews (revision_cycle_id,evaluator_id) VALUES (?,?)')->execute([$cycleId, (int) $evaluator['evaluator_id']]);
+                notify_user_once($pdo, (int) $evaluator['evaluator_id'], 'proposal-revision:' . $cycleId . ':' . (int) $evaluator['evaluator_id'], 'Revised proposal ready for review', 'A student submitted a revised proposal that requires your panel decision.', 'evaluator/review_proposal_revision.php?cycle_id=' . $cycleId);
+            }
+        }
     }
     $stageName = $stage === 'proposal' ? 'Proposal' : 'Final Paper';
     notify_user_once($pdo, $studentId, $stage . '-submitted:' . $submissionId . ':' . $studentId, $stageName . ' submission recorded', 'Your ' . strtolower($stageName) . ' was submitted successfully and is now awaiting review.', 'students/student_dashboard.php?view=proposal');

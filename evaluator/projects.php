@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/proposal_revisions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $evaluatorId = (int) $_SESSION['user']['id'];
@@ -10,10 +11,12 @@ $stmt->execute([$evaluatorId]);
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $proposalSchemaReady = proposal_evaluation_schema_available($pdo);
 $proposalScoreColumns = array_column(proposal_criteria(), 'key');
+$revisionSchemaReady = proposal_revision_schema_available($pdo);
 foreach ($projects as &$project) {
     $project['evaluator_proposal_status'] = 'assigned';
     $project['proposal_submission_id'] = null;
     $project['proposal_panel_complete'] = false;
+    $project['revision_cycle_id'] = null;
     try {
         $latestSubmission = latest_stored_pdf_stage_submission($pdo, (int) $project['id'], 'proposal');
         if ($latestSubmission) {
@@ -51,6 +54,11 @@ foreach ($projects as &$project) {
         if ($proposalSchemaReady && !empty($project['proposal_submission_id'])) {
             $panel = proposal_panel_completion($pdo, (int) $project['id'], (int) $project['proposal_submission_id']);
             $project['proposal_panel_complete'] = $panel['ready'];
+        }
+        if ($revisionSchemaReady) {
+            $reviewStmt = $pdo->prepare("SELECT c.id FROM proposal_revision_cycles c INNER JOIN proposal_revision_reviews r ON r.revision_cycle_id=c.id WHERE c.project_id=? AND c.status IN ('pending_panel_review','returned') AND r.evaluator_id=? AND r.decision='pending' ORDER BY c.id DESC LIMIT 1");
+            $reviewStmt->execute([(int)$project['id'],$evaluatorId]);
+            $project['revision_cycle_id'] = $reviewStmt->fetchColumn() ?: null;
         }
     } catch (PDOException $exception) {
         error_log('[evaluator projects] Could not load evaluator proposal state: ' . $exception->getMessage());
@@ -143,7 +151,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                     <td class="title-cell"><span class="project-title"><?=esc($title)?></span></td><td><?=esc($group ?: 'Not set')?></td><td><?=esc($adviser ?: 'Not assigned')?></td>
                     <td><?= $defenseDate !== '' ? esc(date('M j, Y', strtotime($defenseDate))) : '<span class="muted-cell">Not set</span>' ?></td>
                     <td><span class="status-pill status-<?=esc($statusClass)?>"><?=esc($statusLabel)?></span><?php if (!empty($project['proposal_panel_complete'])): ?><br><small class="muted-cell">Panel Completed</small><?php endif; ?></td>
-                    <td><?php if ($assignmentStatus === 'submitted' && !empty($project['proposal_submission_id'])): ?><a class="action-link" href="evaluate_project.php?project_id=<?=esc($project['id'])?>&amp;proposal_submission_id=<?=esc($project['proposal_submission_id'])?>">View Submitted Evaluation</a><?php else: ?><a class="action-link" href="evaluate_selection.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a><?php endif; ?></td>
+                    <td><?php if (!empty($project['revision_cycle_id'])): ?><a class="action-link" href="review_proposal_revision.php?cycle_id=<?=esc($project['revision_cycle_id'])?>">Review Revision</a><?php elseif ($assignmentStatus === 'submitted' && !empty($project['proposal_submission_id'])): ?><a class="action-link" href="evaluate_project.php?project_id=<?=esc($project['id'])?>&amp;proposal_submission_id=<?=esc($project['proposal_submission_id'])?>">View Submitted Evaluation</a><?php else: ?><a class="action-link" href="evaluate_selection.php?project_id=<?=esc($project['id'])?>">Evaluate Submission</a><?php endif; ?></td>
                   </tr>
                 <?php endforeach; ?>
                 <tr class="no-results-row" data-no-results hidden><td colspan="6">No projects match these filters. Adjust or reset your filters.</td></tr>

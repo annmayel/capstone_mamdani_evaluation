@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/proposal_revisions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || !in_array($_SESSION['user']['role'], ['evaluator', 'dean'], true)) { http_response_code(403); exit('Forbidden'); }
 $evaluatorId = (int) $_SESSION['user']['id'];
@@ -10,15 +11,23 @@ if ($expectedStage !== '' && !in_array($expectedStage, ['proposal', 'final'], tr
     http_response_code(400);
     exit('Invalid submission stage.');
 }
+$revisionSchemaReady = proposal_revision_schema_available($pdo);
 $query = $_SESSION['user']['role'] === 'dean'
     ? 'SELECT s.* FROM student_submissions s WHERE s.id = ?'
-    : 'SELECT s.* FROM student_submissions s INNER JOIN evaluator_assignments a ON a.project_id = s.project_id WHERE s.id = ? AND a.evaluator_id = ?';
+    : ($revisionSchemaReady
+      ? "SELECT s.* FROM student_submissions s WHERE s.id = ? AND (
+        EXISTS (SELECT 1 FROM evaluator_assignments a WHERE a.project_id=s.project_id AND a.evaluator_id=?) OR EXISTS (
+          SELECT 1 FROM proposal_revision_cycles c
+          INNER JOIN proposal_revision_reviews r ON r.revision_cycle_id=c.id
+          WHERE c.revision_submission_id=s.id AND r.evaluator_id=?
+        ))"
+      : 'SELECT s.* FROM student_submissions s INNER JOIN evaluator_assignments a ON a.project_id = s.project_id WHERE s.id = ? AND a.evaluator_id = ?');
 if ($expectedStage !== '') {
     $query .= ' AND s.stage = ?';
 }
 $query .= ' LIMIT 1';
 $stmt = $pdo->prepare($query);
-$params = $_SESSION['user']['role'] === 'dean' ? [$submissionId] : [$submissionId, $evaluatorId];
+$params = $_SESSION['user']['role'] === 'dean' ? [$submissionId] : ($revisionSchemaReady ? [$submissionId, $evaluatorId, $evaluatorId] : [$submissionId, $evaluatorId]);
 if ($expectedStage !== '') {
     $params[] = $expectedStage;
 }

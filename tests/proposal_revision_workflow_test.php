@@ -1,0 +1,33 @@
+<?php
+require_once __DIR__ . '/../php/fuzzy_engine.php';
+require_once __DIR__ . '/../php/proposal_revisions.php';
+
+$pdo = new PDO('sqlite::memory:');
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, full_name TEXT)');
+$pdo->exec('CREATE TABLE proposal_revision_cycles (id INTEGER PRIMARY KEY, project_id INTEGER, original_submission_id INTEGER, revision_submission_id INTEGER, revision_number INTEGER, status TEXT, created_at TEXT, completed_at TEXT)');
+$pdo->exec('CREATE TABLE proposal_revision_reviews (id INTEGER PRIMARY KEY, revision_cycle_id INTEGER, evaluator_id INTEGER, decision TEXT, comments TEXT, submitted_at TEXT, created_at TEXT, updated_at TEXT)');
+$pdo->exec("INSERT INTO users VALUES (10,'Evaluator A'),(11,'Evaluator B')");
+$pdo->exec("INSERT INTO proposal_revision_cycles VALUES (1,5,14,15,1,'pending_panel_review','2026-11-26 12:00:00',NULL)");
+$pdo->exec("INSERT INTO proposal_revision_reviews VALUES (1,1,10,'pending',NULL,NULL,'2026-11-26 12:00:00','2026-11-26 12:00:00'),(2,1,11,'pending',NULL,NULL,'2026-11-26 12:00:00','2026-11-26 12:00:00')");
+$pdo->exec("UPDATE proposal_revision_reviews SET decision='accepted',comments='Addressed',submitted_at='2026-11-26 12:01:00' WHERE id=1");
+$pending = proposal_revision_refresh_status($pdo, 1);
+if ($pending['status'] !== 'pending_panel_review' || $pending['pending_count'] !== 1) throw new RuntimeException('A partial panel must remain pending.');
+$pdo->exec("UPDATE proposal_revision_reviews SET decision='accepted',comments='Addressed',submitted_at='2026-11-26 12:02:00' WHERE id=2");
+$accepted = proposal_revision_refresh_status($pdo, 1);
+if ($accepted['status'] !== 'accepted') throw new RuntimeException('All accepted panel reviews must accept the revision.');
+$pdo->exec("UPDATE proposal_revision_reviews SET decision='returned' WHERE id=1");
+$pdo->exec("UPDATE proposal_revision_reviews SET decision='pending',comments=NULL,submitted_at=NULL WHERE id=2");
+$returned = proposal_revision_refresh_status($pdo, 1);
+if ($returned['status'] !== 'returned' || $returned['pending_count'] !== 1) throw new RuntimeException('A return must be recorded while the remaining panel review stays pending.');
+$pdo->exec("UPDATE proposal_revision_reviews SET decision='accepted',comments='Addressed',submitted_at='2026-11-26 12:03:00' WHERE id=2");
+$returnedComplete = proposal_revision_refresh_status($pdo, 1);
+if ($returnedComplete['status'] !== 'returned' || $returnedComplete['pending_count'] !== 0) throw new RuntimeException('A replacement revision may begin only after the returned panel cycle is complete.');
+$access = $pdo->prepare('SELECT c.id FROM proposal_revision_cycles c INNER JOIN proposal_revision_reviews r ON r.revision_cycle_id=c.id WHERE c.id=? AND r.evaluator_id=?');
+$access->execute([1, 12]);
+if ($access->fetchColumn()) throw new RuntimeException('An evaluator outside the original panel must not access the review.');
+$pdo->exec("INSERT INTO proposal_revision_cycles VALUES (2,5,14,16,2,'pending_panel_review','2026-11-26 13:00:00',NULL)");
+$pdo->exec("INSERT INTO proposal_revision_reviews VALUES (3,2,10,'pending',NULL,NULL,'2026-11-26 13:00:00','2026-11-26 13:00:00'),(4,2,11,'pending',NULL,NULL,'2026-11-26 13:00:00','2026-11-26 13:00:00')");
+$resubmitted = proposal_revision_review_summary($pdo, 2);
+if ($resubmitted['pending_count'] !== 2 || $resubmitted['assigned_count'] !== 2) throw new RuntimeException('A returned proposal must create a new pending review cycle for the same panel.');
+echo "proposal_revision_workflow: ok\n";
