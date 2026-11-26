@@ -28,6 +28,8 @@ $proposalEvaluatorNames = [];
 $revisionCycle = null;
 $revisionSummary = null;
 $majorRevisionRequired = false;
+$revisionUploadState = 'not_required';
+$revisionSchemaReady = false;
 $revisionNumbersBySubmission = [];
 $proposalCriteria = proposal_criteria();
 $formatDate = static fn($date) => $date ? date('M d, Y g:i A', strtotime($date)) : 'Not set';
@@ -60,7 +62,8 @@ if ($project) {
             error_log('[student proposal] Panel proposal result could not be loaded: ' . $exception->getMessage());
         }
     }
-    if (proposal_revision_schema_available($pdo)) {
+    $revisionSchemaReady = proposal_revision_schema_available($pdo);
+    if ($revisionSchemaReady) {
         $revisionCycle = proposal_revision_cycle($pdo, (int) $project['id']);
         if ($revisionCycle) $revisionSummary = proposal_revision_review_summary($pdo, (int) $revisionCycle['id']);
         $revisionHistoryStmt = $pdo->prepare('SELECT revision_submission_id, revision_number FROM proposal_revision_cycles WHERE project_id=?');
@@ -78,8 +81,15 @@ if ($project) {
             $proposalEvaluatorNames = proposal_evaluator_names($pdo, $proposalEvaluations);
         }
     }
-    $majorRevisionRequired = (bool) ($proposalRecommendation && proposal_is_major_revision($proposalRecommendation))
+    $originalMajorRevision = (bool) ($proposalRecommendation && proposal_is_major_revision($proposalRecommendation));
+    $majorRevisionRequired = $originalMajorRevision
         || ($revisionCycle && in_array($revisionCycle['status'], ['pending_panel_review', 'returned'], true));
+    $revisionUploadState = proposal_revision_upload_state(
+        $originalMajorRevision,
+        $revisionSchemaReady,
+        $revisionCycle,
+        $revisionSummary
+    );
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
     $finalVerdictStmt->execute([(int) $project['id']]);
@@ -103,8 +113,7 @@ $latestProposalStatus = stage_submission_status_label($proposalSubmission);
 $latestFinalStatus = stage_submission_status_label($finalSubmission);
 $finalUnlocked = $project && proposal_allows_final_submission($project, $proposalSubmission);
 $proposalUploadAllowed = $majorRevisionRequired
-    ? (!$revisionCycle || ($revisionCycle['status'] === 'returned'
-        && $revisionSummary !== null && $revisionSummary['pending_count'] === 0))
+    ? $revisionUploadState === 'allowed'
     : (!$proposalSubmission || empty($proposalSubmission['stored_filename'])
         || in_array($proposalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $finalUploadAllowed = $finalUnlocked && (!$finalSubmission || in_array($finalSubmission['status'], ['revision_required', 'revision_requested'], true));
@@ -120,6 +129,9 @@ $uploadMessages = [
     'invalid_request' => 'The submission request could not be verified.',
     'final_locked' => 'The Final Paper stays locked until the IT Chairperson approves the proposal and accepts any required revisions.',
     'submission_locked' => 'This paper cannot be replaced while it is under evaluation or awaiting an official decision.',
+    'revision_schema_required' => 'Proposal revision setup is not installed yet. Ask an administrator to apply migration 023 before submitting a revision.',
+    'revision_pending' => 'Your revised proposal is still being reviewed by the original panel. Another revision cannot be submitted yet.',
+    'revision_accepted' => 'This proposal revision was accepted. Continue with the Final Paper stage when it becomes available.',
     'missing_submission' => 'Choose a PDF paper to submit.',
     'missing_project_title' => 'Enter the project title so the Chairperson can identify the project.',
     'invalid_drive_link' => 'Use a valid Google Drive link.',
@@ -191,7 +203,14 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
                 <div class="proposal-form-footer"><small><?=$majorRevisionRequired ? 'This revision will be sent to the original assigned panel evaluators for review.' : 'Upload a revised paper only after corrections are requested.'?></small><button class="btn primary" type="submit"><?=$proposalSubmission ? 'Upload Revised Proposal' : 'Submit Proposal Paper'?></button></div>
               </form>
             <?php else: ?>
-              <p class="submission-help">A submitted proposal cannot be replaced while it is under evaluation or awaiting the Chairperson’s official decision.</p>
+              <p class="submission-help"><?php
+                echo esc(match ($revisionUploadState) {
+                    'schema_required' => 'Proposal revision setup is pending. An administrator must apply migration 023 before you can submit the required revision.',
+                    'pending' => 'Your revised proposal is currently under panel re-evaluation. You can submit another version after the original panel completes this review.',
+                    'accepted' => 'Your proposal revision has been accepted. Further proposal revisions are locked; continue with the Final Paper stage when it is available.',
+                    default => 'A submitted proposal cannot be replaced while it is under evaluation or awaiting the Chairperson’s official decision.',
+                });
+              ?></p>
             <?php endif; ?>
             <?php if (!empty($project['proposal_required_revisions']) && !empty($project['proposal_confirmed_at'])): ?>
               <div class="proposal-student-revisions"><strong>Required Proposal Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div>

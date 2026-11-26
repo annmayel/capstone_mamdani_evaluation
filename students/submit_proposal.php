@@ -35,19 +35,32 @@ $latestProposal = latest_stage_submission($pdo, (int) $projectId, 'proposal');
 $latestStageSubmission = latest_stage_submission($pdo, (int) $projectId, $stage);
 $majorRevisionUpload = false;
 $previousRevisionCycle = null;
-if ($stage === 'proposal' && $latestProposal && proposal_revision_schema_available($pdo) && proposal_evaluation_schema_available($pdo)) {
-    $previousRevisionCycle = proposal_revision_cycle($pdo, (int) $projectId);
+$revisionUploadState = 'not_required';
+if ($stage === 'proposal' && $latestProposal && proposal_evaluation_schema_available($pdo)) {
+    $revisionSchemaReady = proposal_revision_schema_available($pdo);
+    $previousRevisionCycle = $revisionSchemaReady ? proposal_revision_cycle($pdo, (int) $projectId) : null;
     $previousRevisionSummary = $previousRevisionCycle
         ? proposal_revision_review_summary($pdo, (int) $previousRevisionCycle['id'])
         : null;
-    if ($previousRevisionCycle && $previousRevisionCycle['status'] === 'returned'
-        && $previousRevisionSummary['pending_count'] === 0) {
-        $majorRevisionUpload = true;
+    $originalSubmissionId = $previousRevisionCycle
+        ? (int) $previousRevisionCycle['original_submission_id']
+        : (int) $latestProposal['id'];
+    $panel = proposal_panel_completion($pdo, (int) $projectId, $originalSubmissionId);
+    $originalMajorRevision = $panel['ready'] && proposal_is_major_revision($panel['consolidated']['recommendation']);
+    $revisionUploadState = proposal_revision_upload_state(
+        $originalMajorRevision,
+        $revisionSchemaReady,
+        $previousRevisionCycle,
+        $previousRevisionSummary
+    );
+    $majorRevisionUpload = $revisionUploadState === 'allowed';
+    if ($revisionUploadState === 'schema_required') {
+        header('Location: ' . $redirect . '&error=revision_schema_required');
+        exit;
     }
-    $panel = proposal_panel_completion($pdo, (int) $projectId, (int) $latestProposal['id']);
-    if ($panel['ready'] && proposal_is_major_revision($panel['consolidated']['recommendation'])) {
-        $majorRevisionUpload = !$previousRevisionCycle
-            || ($previousRevisionCycle['status'] === 'returned' && $previousRevisionSummary['pending_count'] === 0);
+    if (in_array($revisionUploadState, ['pending', 'accepted'], true)) {
+        header('Location: ' . $redirect . '&error=revision_' . $revisionUploadState);
+        exit;
     }
 }
 if ($stage === 'final' && !proposal_allows_final_submission($project, $latestProposal)) {

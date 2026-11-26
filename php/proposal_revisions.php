@@ -44,3 +44,41 @@ function proposal_is_major_revision(array $recommendation): bool
 {
     return ($recommendation['label'] ?? '') === 'PASSED/APPROVED (Major Revision)';
 }
+
+/**
+ * Determine whether a student may create the next proposal-revision version.
+ * The panel's original major-revision recommendation starts the workflow; a
+ * returned revision is reusable only after every original reviewer finished
+ * the current cycle.  Keeping this decision here prevents the portal and
+ * submission endpoint from applying different locking rules.
+ */
+function proposal_revision_upload_state(
+    bool $originalPanelRequiresMajorRevision,
+    bool $revisionSchemaReady,
+    ?array $cycle,
+    ?array $summary
+): string {
+    if (!$originalPanelRequiresMajorRevision && !$cycle) {
+        return 'not_required';
+    }
+
+    if (!$revisionSchemaReady) {
+        return 'schema_required';
+    }
+
+    if (!$cycle) {
+        return 'allowed';
+    }
+
+    if (($cycle['status'] ?? '') === 'accepted') {
+        return 'accepted';
+    }
+
+    if (($cycle['status'] ?? '') === 'returned'
+        && $summary !== null
+        && (int) ($summary['pending_count'] ?? 0) === 0) {
+        return 'allowed';
+    }
+
+    return 'pending';
+}
