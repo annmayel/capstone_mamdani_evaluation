@@ -5,7 +5,7 @@ require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/submissions.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
-$projectId=(int)($_GET['project_id']??0);$requestedFinalSubmissionId=(int)($_GET['final_submission_id']??0);$evaluatorId=(int)$_SESSION['user']['id'];
+$projectId=(int)($_GET['project_id']??0);$requestedFinalSubmissionId=(int)($_GET['final_submission_id']??0);$evaluatorId=(int)$_SESSION['user']['id'];$submittedViewRequested=!empty($e3SubmittedView);
 $projectStmt=$pdo->prepare('SELECT p.*,a.status assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id=p.id WHERE p.id=? AND a.evaluator_id=? LIMIT 1');
 $projectStmt->execute([$projectId,$evaluatorId]);$project=$projectStmt->fetch(PDO::FETCH_ASSOC);
 if(!$project){header('Location: projects.php?evaluation_error=not_assigned');exit;}
@@ -21,6 +21,7 @@ if($finalSubmission['status']==='submitted'){
 }
 $criteria=e3_criteria();$errors=[];$success='';
 $existingStmt=$pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');$existingStmt->execute([$projectId,$evaluatorId,(int)$finalSubmission['id']]);$existing=$existingStmt->fetch(PDO::FETCH_ASSOC)?:null;
+if($submittedViewRequested&&(!$existing||$existing['status']!=='submitted')){header('Location: evaluate_selection.php?project_id='.$projectId);exit;}
 $panelResult=e3_consolidated($pdo,$projectId,(int)$finalSubmission['id']);
 $panelRecommendation=$panelResult['calculated_score']===null?null:e3_stage_verdict_from_score((float)$panelResult['calculated_score']);
 $officialStmt=$pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id=? AND final_submission_id=? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');

@@ -97,10 +97,10 @@ $email = trim((string) ($user['email'] ?? ''));
         <span class="selection-action"><?=$proposalReady ? ($proposalSubmitted ? 'View Submitted Evaluation' : 'Start Proposal Evaluation') : 'Proposal PDF Required'?> <b><?=$proposalReady ? '→' : '&#128274;'?></b></span>
       <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>
       <?php $finalActionLabel = $finalSubmitted ? 'View Submitted Evaluation' : ($finalDraft ? 'Continue Draft' : 'Start Final Hearing Evaluation'); ?>
-      <?php if ($finalReady): ?><a class="selection-card" data-final-action="<?=esc($finalActionLabel)?>" href="evaluate_e3.php?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" data-final-action="<?=esc($finalLockReason)?>" aria-disabled="true"><?php endif; ?>
+      <?php if ($finalReady): ?><a class="selection-card" href="<?= $finalSubmitted ? 'view_e3_evaluation.php' : 'evaluate_e3.php' ?>?project_id=<?=$projectId?>&amp;final_submission_id=<?=esc($finalSubmission['id'])?>"><?php else: ?><article class="selection-card is-locked" aria-disabled="true"><?php endif; ?>
         <div class="selection-card-icon hearing-icon" aria-hidden="true"><span>✓</span></div>
         <div class="selection-card-copy"><span class="selection-label">Final hearing · <?=esc($finalStatusLabel)?></span><h2>Final Hearing Evaluation</h2><p>Evaluate the capstone project using the CEIT-UR-E3 final hearing rubric.</p></div>
-        <span class="selection-action"><?=$finalReady ? 'Start Final Hearing Evaluation' : 'Waiting for Final Paper'?> <b><?=$finalReady ? '→' : '&#128274;'?></b></span>
+        <span class="selection-action"><?=esc($finalReady ? $finalActionLabel : $finalLockReason)?> <b><?=$finalReady ? '→' : '&#128274;'?></b></span>
       <?php if ($finalReady): ?></a><?php else: ?></article><?php endif; ?>
     </section>
   </main>
