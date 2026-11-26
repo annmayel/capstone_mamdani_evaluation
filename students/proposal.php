@@ -124,6 +124,17 @@ if ($project) {
     }
 }
 
+$finalEvaluationStarted = false;
+if ($finalSubmission) {
+    try {
+        $finalEvaluationStateStmt = $pdo->prepare('SELECT COUNT(*) FROM e3_evaluations WHERE project_id=? AND final_submission_id=?');
+        $finalEvaluationStateStmt->execute([(int) $project['id'], (int) $finalSubmission['id']]);
+        $finalEvaluationStarted = (int) $finalEvaluationStateStmt->fetchColumn() > 0;
+    } catch (Throwable $exception) {
+        error_log('[student final defense] Final evaluation state could not be loaded: ' . $exception->getMessage());
+    }
+}
+
 $latestProposalStatus = stage_submission_status_label($proposalSubmission);
 $latestFinalStatus = stage_submission_status_label($finalSubmission);
 $finalUnlocked = $project && proposal_allows_final_submission($project, $proposalSubmission);
@@ -132,11 +143,25 @@ $proposalUploadAllowed = $majorRevisionRequired
     : (!$proposalSubmission || empty($proposalSubmission['stored_filename'])
         || in_array($proposalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $finalUploadAllowed = $finalUnlocked && (!$finalSubmission || in_array($finalSubmission['status'], ['revision_required', 'revision_requested'], true));
+$finalDefenseState = !$finalUnlocked
+    ? ['label' => 'Locked', 'class' => 'muted', 'message' => 'Final Defense becomes available after the IT Chairperson officially approves the completed proposal stage and opens the next stage.']
+    : (!$finalSubmission
+        ? ['label' => 'Available', 'class' => 'success', 'message' => 'Proposal stage is complete. You can submit your Final Paper and Project for the Final Defense.']
+        : match ((string) $finalSubmission['status']) {
+            'submitted' => ['label' => 'Submitted', 'class' => 'info', 'message' => 'Your Final Defense submission is waiting for IT Chairperson review and evaluator assignment.'],
+            'under_evaluation' => $finalEvaluationStarted
+                ? ['label' => 'Under Review', 'class' => 'warning', 'message' => 'Final Hearing evaluators are reviewing your Final Defense submission.']
+                : ['label' => 'Evaluators Assigned', 'class' => 'info', 'message' => 'The IT Chairperson assigned Final Hearing evaluators. Your submission is awaiting their review.'],
+            'accepted' => ['label' => 'Accepted', 'class' => 'success', 'message' => 'Your Final Defense result has been accepted.'],
+            'revision_required', 'revision_requested' => ['label' => 'Revision Required', 'class' => 'warning', 'message' => 'The IT Chairperson requested a revised Final Defense submission.'],
+            default => ['label' => $latestFinalStatus, 'class' => 'info', 'message' => 'Your Final Defense submission is being processed.'],
+        });
+$latestFinalStatus = $finalDefenseState['label'];
 $displayName = $user['full_name'] ?? 'Student';
 $initial = strtoupper(substr($displayName, 0, 1));
 $uploadMessages = [
     'proposal' => 'Proposal Paper submitted successfully.',
-    'final' => 'Final Paper submitted successfully.',
+    'final' => 'Final Defense submission recorded successfully.',
     'invalid_pdf' => 'Only valid PDF files up to 10 MB are accepted.',
     'storage_failed' => 'The paper could not be stored. Please contact the administrator.',
     'save_failed' => 'The paper could not be recorded. Please contact the administrator.',
@@ -153,6 +178,7 @@ $uploadMessages = [
     'invalid_github_link' => 'Use a valid GitHub link.',
     'invalid_other_link' => 'Use a valid HTTP or HTTPS project link.',
     'invalid_link' => 'Use a valid Google Drive or GitHub link.',
+    'invalid_project_resource_link' => 'Use a valid HTTP or HTTPS Project Resource Link.',
 ];
 $messageKey = isset($_GET['uploaded']) ? (string) $_GET['uploaded'] : (string) ($_GET['error'] ?? '');
 $mainStatus = !$project ? 'Project Not Registered' : ($proposalSubmission ? $latestProposalStatus : 'Not Submitted');
@@ -182,6 +208,7 @@ $revisionProgressLabel = match ($revisionUploadState) {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Project Submission - Capstone Evaluation System - Student Portal</title>
   <link rel="stylesheet" href="../assets/style.css?v=20261126">
+  <link rel="stylesheet" href="final-defense.css?v=20261126">
   <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
 </head>
 <body class="student-portal">
@@ -338,24 +365,33 @@ $revisionProgressLabel = match ($revisionUploadState) {
         </section>
         <section class="portal-panel">
             <div class="panel-heading" style="margin-top:24px">
-              <div><span class="eyebrow">STAGE 2</span><h3>Final Paper Submission</h3></div>
-              <span class="status-pill <?=$finalUnlocked ? (in_array($latestFinalStatus, ['Revision Required'], true) ? 'warning' : 'success') : 'muted'?>">● <?=$finalUnlocked ? esc($latestFinalStatus) : 'Locked'?></span>
+              <div><span class="eyebrow">STAGE 2</span><h3>Final Defense Submission (Final Paper &amp; Project)</h3></div>
+              <span class="status-pill <?=esc($finalDefenseState['class'])?>">● <?=esc($finalDefenseState['label'])?></span>
             </div>
+            <div class="proposal-student-revisions <?= $finalDefenseState['class'] === 'success' ? 'final-defense-available' : '' ?>"><strong><?=esc($finalDefenseState['label'])?></strong><p><?=esc($finalDefenseState['message'])?></p></div>
             <?php if ($finalSubmission): ?>
+              <?php if (!empty($finalSubmission['submission_url'])): ?><p class="submission-help">Project Resource Link: <a href="<?=esc($finalSubmission['submission_url'])?>" target="_blank" rel="noopener">Open submitted project resource</a></p><?php endif; ?>
               <div class="current-submission">
-                <div><strong><?=esc($finalSubmission['original_filename'])?></strong><small>Final Paper · <?=esc($formatDate($finalSubmission['created_at']))?> · <?=esc($latestFinalStatus)?></small></div>
-                <?php if (!empty($finalSubmission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($finalSubmission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php elseif (!empty($finalSubmission['submission_url'])): ?><a class="btn ghost" href="<?=esc($finalSubmission['submission_url'])?>" target="_blank" rel="noopener">Open Link</a><?php endif; ?>
+                <div><strong><?=esc($finalSubmission['original_filename'])?></strong><small>Final Defense · <?=esc($formatDate($finalSubmission['created_at']))?> · <?=esc($latestFinalStatus)?></small></div>
+                <?php if (!empty($finalSubmission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($finalSubmission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php endif; ?>
               </div>
             <?php endif; ?>
             <?php if ($finalUploadAllowed): ?>
               <form class="submission-form" method="post" action="submit_proposal.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
                 <input type="hidden" name="stage" value="final">
-                <div class="proposal-upload"><label for="final-file">Final Paper PDF</label><div class="proposal-upload-surface"><span class="proposal-upload-icon" aria-hidden="true">↑</span><strong>Choose your final paper PDF</strong><span>PDF only · Maximum 10 MB</span><input id="final-file" name="proposal" type="file" accept="application/pdf" required></div></div>
-                <div class="proposal-form-footer"><small><?=$finalSubmission ? 'Upload a revised final paper after the Chairperson requests corrections.' : 'The final paper uses this same registered project.'?></small><button class="btn primary" type="submit"><?=$finalSubmission ? 'Upload Revised Final Paper' : 'Submit Final Paper'?></button></div>
+                <div class="final-defense-layout">
+                  <div class="final-defense-fields">
+                    <div class="submission-title-field"><label>Registered Project Title</label><div class="current-submission"><strong><?=esc($project['title'])?></strong><small>This registered project will be included with your Final Defense submission.</small></div></div>
+                    <div class="proposal-upload"><label for="final-file">Final Paper PDF</label><div class="proposal-upload-surface"><span class="proposal-upload-icon" aria-hidden="true">↑</span><strong>Choose your final paper PDF</strong><span>PDF only · Maximum 10 MB</span><input id="final-file" name="proposal" type="file" accept="application/pdf" required></div></div>
+                    <div class="submission-title-field"><label for="final-project-resource">Project Resource Link <small>(optional)</small></label><input id="final-project-resource" name="project_resource_url" type="url" maxlength="1000" placeholder="https://github.com/your-project or https://drive.google.com/..."><small>Attach the final project repository, drive folder, demo, or other resource without changing your registered project.</small></div>
+                  </div>
+                  <aside class="final-defense-guidelines" aria-labelledby="final-defense-guidelines-title"><span aria-hidden="true">ⓘ</span><div><strong id="final-defense-guidelines-title">Guidelines</strong><ul><li>Submit your complete, final manuscript in PDF format.</li><li>Make sure the file is the revised, defense-ready version.</li><li>You may include a project resource link such as GitHub or Google Drive.</li><li>Your submission will be sent to the IT Chairperson for review and evaluator assignment.</li></ul></div></aside>
+                </div>
+                <div class="proposal-form-footer"><small><?=$finalSubmission ? 'Upload a revised Final Defense only after the IT Chairperson requests corrections.' : 'Your combined Final Paper and Project submission will be sent to the IT Chairperson for review and evaluator assignment.'?></small><button class="btn primary" type="submit"><?=$finalSubmission ? 'Submit Revised Final Defense' : 'Submit Final Defense'?></button></div>
               </form>
             <?php elseif (!$finalUnlocked): ?>
-              <div class="empty-state">Available after the Proposal is officially approved and any required revisions are accepted by the IT Chairperson.</div>
+              <div class="empty-state">Final Defense opens only after the IT Chairperson formally approves the completed proposal stage.</div>
             <?php else: ?>
               <p class="submission-help">A submitted final paper cannot be replaced while it is under evaluation or awaiting the Chairperson’s official decision.</p>
             <?php endif; ?>

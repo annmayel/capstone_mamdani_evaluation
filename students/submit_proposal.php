@@ -79,6 +79,7 @@ $googleDriveUrl = trim((string) ($_POST['google_drive_url'] ?? ''));
 $githubUrl = trim((string) ($_POST['github_url'] ?? ''));
 $otherProjectUrl = trim((string) ($_POST['other_project_url'] ?? ''));
 $legacySubmissionUrl = trim((string) ($_POST['submission_url'] ?? ''));
+$finalProjectResourceUrl = trim((string) ($_POST['project_resource_url'] ?? ''));
 $hasUpload = $file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
 $destination = null;
 $existingProjectTitle = trim((string) ($project['title'] ?? ''));
@@ -111,6 +112,10 @@ if ($otherProjectUrl && !fuzzy_project_link_is_valid($otherProjectUrl)) {
 }
 if ($legacySubmissionUrl && !fuzzy_project_link_is_valid($legacySubmissionUrl, ['drive.google.com', 'docs.google.com', 'github.com', 'gist.github.com', 'raw.githubusercontent.com'])) {
     header('Location: ' . $redirect . '&error=invalid_link');
+    exit;
+}
+if ($finalProjectResourceUrl && !fuzzy_project_link_is_valid($finalProjectResourceUrl)) {
+    header('Location: ' . $redirect . '&error=invalid_project_resource_link');
     exit;
 }
 
@@ -188,7 +193,10 @@ try {
         ]);
     }
     $stmt = $pdo->prepare('INSERT INTO student_submissions (student_id, project_id, stage, original_filename, stored_filename, submission_url, mime_type, file_size, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$studentId, (int) $projectId, $stage, $originalName, $storedName, $hasUpload ? null : ($legacySubmissionUrl ?: null), $mime, $hasUpload ? (int) $file['size'] : $fileSize, 'submitted']);
+    $submissionUrl = $stage === 'final'
+        ? ($finalProjectResourceUrl ?: null)
+        : ($hasUpload ? null : ($legacySubmissionUrl ?: null));
+    $stmt->execute([$studentId, (int) $projectId, $stage, $originalName, $storedName, $submissionUrl, $mime, $hasUpload ? (int) $file['size'] : $fileSize, 'submitted']);
     $submissionId = (int) $pdo->lastInsertId();
     if ($stage === 'proposal') {
         $pdo->prepare('UPDATE projects SET proposal_revision_accepted_submission_id = NULL WHERE id = ?')->execute([(int) $projectId]);
@@ -219,7 +227,7 @@ try {
             notify_user_once($pdo, (int) $evaluator['evaluator_id'], 'proposal-revision:' . $revisionCycleId . ':' . (int) $evaluator['evaluator_id'], 'Revised proposal ready for review', 'A student submitted a revised proposal that requires your panel decision.', 'evaluator/review_proposal_revision.php?cycle_id=' . $revisionCycleId);
         }
     }
-    $stageName = $stage === 'proposal' ? 'Proposal' : 'Final Paper';
+    $stageName = $stage === 'proposal' ? 'Proposal' : 'Final Defense';
     notify_user_once($pdo, $studentId, $stage . '-submitted:' . $submissionId . ':' . $studentId, $stageName . ' submission recorded', 'Your ' . strtolower($stageName) . ' was submitted successfully and is now awaiting review.', 'students/student_dashboard.php?view=proposal');
     $studentStmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE id = ? AND role = 'student' LIMIT 1");
     $studentStmt->execute([$studentId]);
