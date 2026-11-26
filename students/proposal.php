@@ -73,6 +73,7 @@ if ($project) {
     if ($revisionCycle && $proposalRecommendation === null && proposal_evaluation_schema_available($pdo)) {
         $originalPanel = proposal_panel_completion($pdo, (int) $project['id'], (int) $revisionCycle['original_submission_id']);
         if ($originalPanel['ready']) {
+            $proposalPanel = $originalPanel;
             $consolidated = $originalPanel['consolidated'];
             $proposalEvaluations = $consolidated['evaluations'];
             $proposalPanelTotal = $consolidated['calculated_score'];
@@ -142,6 +143,23 @@ $uploadMessages = [
 $messageKey = isset($_GET['uploaded']) ? (string) $_GET['uploaded'] : (string) ($_GET['error'] ?? '');
 $mainStatus = !$project ? 'Project Not Registered' : ($proposalSubmission ? $latestProposalStatus : 'Not Submitted');
 $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'success' : (in_array($mainStatus, ['Revision Required', 'Under Evaluation'], true) || !$finalUnlocked ? 'warning' : 'info');
+$panelStatusLabel = $proposalPercentage === null
+    ? 'Pending Panel Evaluation'
+    : 'Completed';
+$revisionProgressStep = match ($revisionUploadState) {
+    'pending' => 3,
+    'accepted', 'returned' => 4,
+    'allowed' => $revisionCycle ? 2 : 1,
+    default => 1,
+};
+$revisionProgressLabel = match ($revisionUploadState) {
+    'pending' => 'Pending Panel Re-evaluation',
+    'accepted' => 'Revision Accepted',
+    'returned' => 'Revision Returned',
+    'allowed' => $revisionCycle ? 'Submit Revised Proposal' : 'Major Revision Required',
+    'schema_required' => 'Revision Setup Required',
+    default => 'Major Revision Required',
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -149,7 +167,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Project Submission - Capstone Evaluation System - Student Portal</title>
-  <link rel="stylesheet" href="../assets/style.css?v=20261125">
+  <link rel="stylesheet" href="../assets/style.css?v=20261126">
   <link rel="icon" type="image/png" href="../favicon.png?v=20261016">
 </head>
 <body class="student-portal">
@@ -171,6 +189,74 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
           <div class="student-upload-message <?=isset($_GET['uploaded']) ? 'success' : 'error'?>" role="status"><?=esc($uploadMessages[$messageKey])?></div>
         <?php endif; ?>
 
+        <?php if ($project && $proposalPercentage !== null): ?>
+          <section class="proposal-result-dashboard" aria-labelledby="proposal-results-heading">
+            <div class="proposal-result-heading">
+              <div><span class="eyebrow">PROPOSAL EVALUATION RESULTS</span><h2 id="proposal-results-heading">Proposal Evaluation Results</h2><p>Panel evaluation and revision review for your capstone proposal.</p></div>
+              <span class="proposal-result-score"><?=number_format((float) $proposalPanelTotal, 2)?> <small>/ 100</small></span>
+            </div>
+            <div class="proposal-result-metrics">
+              <div><small>Consolidated Score</small><strong><?=number_format((float) $proposalPanelTotal, 2)?> / 100</strong></div>
+              <div class="is-blue"><small>Fuzzy Linguistic Rating</small><strong><?=esc($proposalRecommendation['fuzzy']['rating'])?></strong></div>
+              <div><small>Defuzzified Output</small><strong><?=number_format((float) $proposalRecommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div>
+              <div class="is-green"><small>Panel Recommendation</small><strong><?=esc($proposalRecommendation['label'])?></strong></div>
+              <div><small>Panel Evaluation Status</small><strong><?=esc($panelStatusLabel)?></strong><span><?=esc((string) ($proposalPanel['submitted_count'] ?? 0))?> of <?=esc((string) ($proposalPanel['assigned_count'] ?? 0))?> evaluators submitted</span></div>
+            </div>
+
+            <?php if ($majorRevisionRequired): ?>
+              <div class="major-revision-notice" role="status"><span aria-hidden="true">!</span><div><h3>Major Revision Required</h3><p>Address the original panel's comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.</p></div></div>
+              <ol class="revision-progress" aria-label="Revision workflow progress">
+                <?php $steps = [1 => ['Major Revision Required', 'Review panel feedback'], 2 => ['Submit Revised Proposal', 'Upload your revised document'], 3 => ['Pending Panel Re-evaluation', 'Original panel is reviewing'], 4 => ['Revision Accepted or Returned', 'Panel decision recorded']]; ?>
+                <?php foreach ($steps as $number => [$title, $detail]): ?><li class="<?=$number < $revisionProgressStep ? 'is-complete' : ($number === $revisionProgressStep ? 'is-current' : '')?>"><span><?= $number < $revisionProgressStep ? '✓' : $number ?></span><div><strong><?=esc($title)?></strong><small><?=esc($detail)?></small></div></li><?php endforeach; ?>
+              </ol>
+              <p class="revision-current-state"><strong>Current status:</strong> <?=esc($revisionProgressLabel)?><?php if ($revisionSummary): ?> · <?=esc((string) $revisionSummary['accepted_count'])?> accepted, <?=esc((string) $revisionSummary['pending_count'])?> pending, <?=esc((string) $revisionSummary['returned_count'])?> returned<?php endif; ?></p>
+
+              <div class="revision-workspace">
+                <section class="revision-upload-card" aria-labelledby="revision-upload-heading">
+                  <div class="revision-card-heading"><span aria-hidden="true">⇧</span><div><h3 id="revision-upload-heading">Submit Revised Proposal</h3><p>Upload a PDF that addresses the panel comments and required revisions.</p></div></div>
+                  <?php if ($proposalUploadAllowed): ?>
+                    <form class="revision-submission-form" method="post" action="submit_proposal.php" enctype="multipart/form-data">
+                      <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
+                      <input type="hidden" name="stage" value="proposal">
+                      <input type="hidden" name="project_title" value="<?=esc($project['title'])?>">
+                      <label class="revision-file-dropzone" for="revision-file" data-dropzone>
+                        <span class="revision-file-icon" aria-hidden="true">⇧</span><strong>Drag and drop your revised proposal here</strong><small>or choose a PDF from your device</small>
+                        <input id="revision-file" name="proposal" type="file" accept="application/pdf" required data-revision-file>
+                        <em data-revision-file-name>No file selected</em><i>PDF only · Maximum 10 MB</i>
+                      </label>
+                      <div class="revision-resource-fields"><strong>Updated Project Resource Links</strong><p>Update the links if revised files or source materials changed.</p>
+                        <label for="revision-drive">Google Drive</label><input id="revision-drive" name="google_drive_url" type="url" value="<?=esc($project['google_drive_url'] ?? '')?>" placeholder="https://drive.google.com/...">
+                        <label for="revision-github">GitHub</label><input id="revision-github" name="github_url" type="url" value="<?=esc($project['github_url'] ?? '')?>" placeholder="https://github.com/...">
+                        <label for="revision-other">Other resource link</label><input id="revision-other" name="other_project_url" type="url" maxlength="1000" value="<?=esc($project['other_project_url'] ?? '')?>" placeholder="https://example.com/...">
+                      </div>
+                      <button class="btn primary revision-submit" type="submit">Submit Revised Proposal</button>
+                    </form>
+                  <?php else: ?>
+                    <div class="revision-upload-state"><strong><?=esc($revisionProgressLabel)?></strong><p><?=esc(match ($revisionUploadState) {
+                      'pending' => 'The original assigned panel is reviewing the current revision. A new upload becomes available only after the panel completes its decision.',
+                      'accepted' => 'The panel accepted the revision. No further proposal upload is needed; proceed to the Final Paper stage when it is unlocked.',
+                      'schema_required' => 'Revision setup is pending. An administrator must apply migration 023 before a revised proposal can be recorded.',
+                      default => 'A revised proposal cannot be submitted at this time.',
+                    })?></p></div>
+                  <?php endif; ?>
+                </section>
+                <aside class="revision-information-card"><span aria-hidden="true">i</span><div><h3>Important</h3><p>Your revised proposal will be sent to your original assigned panel evaluators for re-evaluation. You will be notified once all evaluators have submitted their review.</p></div></aside>
+              </div>
+            <?php endif; ?>
+
+            <details class="panel-feedback-disclosure" <?= $majorRevisionRequired ? 'open' : '' ?>><summary><span aria-hidden="true">☷</span> View Panel Comments &amp; Required Revisions</summary><div class="panel-feedback-list">
+              <?php foreach ($proposalEvaluations as $evaluation): $evaluatorName = $proposalEvaluatorNames[(int) $evaluation['evaluator_id']] ?? 'Panel evaluator'; ?>
+                <article class="panel-feedback-card"><header><div><span class="panel-avatar" aria-hidden="true">●</span><strong><?=esc($evaluatorName)?></strong><small>Panel evaluator</small></div><b><?=number_format((float) $evaluation['total_score'], 2)?> / 100</b></header>
+                  <?php if (trim((string) ($evaluation['overall_comments'] ?? '')) !== ''): ?><p><strong>Comments:</strong> <?=nl2br(esc($evaluation['overall_comments']))?></p><?php endif; ?>
+                  <?php if (trim((string) ($evaluation['recommendations'] ?? '')) !== ''): ?><p><strong>Recommendations:</strong> <?=nl2br(esc($evaluation['recommendations']))?></p><?php endif; ?>
+                  <?php if (trim((string) ($evaluation['required_revisions'] ?? '')) !== ''): ?><p class="required-revisions"><strong>Required revisions:</strong> <?=nl2br(esc($evaluation['required_revisions']))?></p><?php endif; ?>
+                  <?php foreach ($proposalCriteria as $code => $criterion): $comment = trim((string) ($evaluation[$criterion['comment_key']] ?? '')); ?><?php if ($comment !== ''): ?><p class="criterion-comment"><strong><?=esc($code)?> · <?=esc($criterion['label'])?>:</strong> <?=nl2br(esc($comment))?></p><?php endif; ?><?php endforeach; ?>
+                </article>
+              <?php endforeach; ?>
+            </div></details>
+          </section>
+        <?php endif; ?>
+
         <section class="portal-panel">
           <div class="proposal-context"><div><span class="eyebrow">REGISTERED PROJECT</span><strong><?=esc($project['title'] ?? 'No project registered yet')?></strong></div><span class="proposal-context-mark" aria-hidden="true">01</span></div>
           <?php if (!$project): ?>
@@ -188,7 +274,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
                 <?php if (!empty($proposalSubmission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($proposalSubmission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php elseif (!empty($proposalSubmission['submission_url'])): ?><a class="btn ghost" href="<?=esc($proposalSubmission['submission_url'])?>" target="_blank" rel="noopener">Open Link</a><?php endif; ?>
               </div>
             <?php endif; ?>
-            <?php if ($proposalUploadAllowed): ?>
+            <?php if ($proposalUploadAllowed && !$majorRevisionRequired): ?>
               <form class="submission-form" method="post" action="submit_proposal.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?=esc(csrf_token())?>">
                 <input type="hidden" name="stage" value="proposal">
@@ -202,7 +288,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
                 </fieldset>
                 <div class="proposal-form-footer"><small><?=$majorRevisionRequired ? 'This revision will be sent to the original assigned panel evaluators for review.' : 'Upload a revised paper only after corrections are requested.'?></small><button class="btn primary" type="submit"><?=$proposalSubmission ? 'Upload Revised Proposal' : 'Submit Proposal Paper'?></button></div>
               </form>
-            <?php else: ?>
+            <?php elseif (!$majorRevisionRequired): ?>
               <p class="submission-help"><?php
                 echo esc(match ($revisionUploadState) {
                     'schema_required' => 'Proposal revision setup is pending. An administrator must apply migration 023 before you can submit the required revision.',
@@ -244,7 +330,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
         </section>
 
         <?php if ($project && $tableReady): ?>
-          <section class="portal-panel proposal-student-result">
+          <?php if ($proposalPercentage === null): ?><section class="portal-panel proposal-student-result">
             <div class="panel-heading"><div><span class="eyebrow">PROPOSAL EVALUATION RESULTS</span><h3>Proposal Evaluation Results</h3></div><strong class="panel-score"><?=$proposalPercentage === null ? 'Pending' : number_format($proposalPercentage, 2) . '%'?></strong></div>
             <?php if ($proposalPercentage === null): ?>
               <div class="empty-state">Pending Panel Evaluation<?php if ($proposalPanel): ?> — <?=esc((string) $proposalPanel['submitted_count'])?> of <?=esc((string) $proposalPanel['assigned_count'])?> assigned evaluators have submitted complete evaluations.<?php else: ?>.<?php endif; ?></div>
@@ -273,7 +359,7 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
               <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
               <?php if ($majorRevisionRequired): ?><div class="proposal-student-revisions"><strong>Major Revision Workflow</strong><p>1. Major Revision Required · 2. <?=$revisionCycle ? 'Revised Proposal Submitted' : 'Submit Revised Proposal'?> · 3. <?=$revisionCycle && $revisionCycle['status'] === 'pending_panel_review' ? 'Pending Panel Re-evaluation' : 'Panel Re-evaluation'?> · 4. <?=$revisionCycle ? esc(ucwords(str_replace('_', ' ', $revisionCycle['status']))) : 'Revision Accepted or Returned'?></p><?php if ($revisionSummary): ?><p><?=$revisionSummary['accepted_count']?> accepted · <?=$revisionSummary['pending_count']?> pending · <?=$revisionSummary['returned_count']?> returned</p><?php foreach ($revisionSummary['reviews'] as $review): if (($review['decision'] ?? 'pending') !== 'pending'): ?><p><strong><?=esc($review['full_name'])?>:</strong> <?=esc(ucfirst($review['decision']))?><?php if (!empty($review['comments'])): ?><br><?=nl2br(esc($review['comments']))?><?php endif; ?></p><?php endif; endforeach; ?><?php endif; ?></div><?php endif; ?>
             <?php endif; ?>
-          </section>
+          </section><?php endif; ?>
 
           <section class="portal-panel proposal-student-result">
             <div class="panel-heading"><div><span class="eyebrow">FINAL HEARING EVALUATION RESULTS</span><h3>Final Hearing Evaluation Results</h3></div><strong class="panel-score"><?=$finalConsolidated && $finalConsolidated['calculated_score'] !== null ? number_format((float) $finalConsolidated['calculated_score'], 2) . '%' : 'Pending'?></strong></div>
@@ -312,5 +398,22 @@ $mainStatusClass = in_array($mainStatus, ['Approved', 'Accepted'], true) ? 'succ
     </div>
   </main>
 </div>
+<script>
+(() => {
+  const file = document.querySelector('[data-revision-file]');
+  const dropzone = document.querySelector('[data-dropzone]');
+  const fileName = document.querySelector('[data-revision-file-name]');
+  if (!file || !dropzone || !fileName) return;
+  const updateName = () => { fileName.textContent = file.files.length ? file.files[0].name : 'No file selected'; };
+  file.addEventListener('change', updateName);
+  ['dragenter', 'dragover'].forEach((eventName) => dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.add('is-dragging'); }));
+  ['dragleave', 'drop'].forEach((eventName) => dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.remove('is-dragging'); }));
+  dropzone.addEventListener('drop', (event) => {
+    if (!event.dataTransfer.files.length) return;
+    file.files = event.dataTransfer.files;
+    updateName();
+  });
+})();
+</script>
 </body>
 </html>
