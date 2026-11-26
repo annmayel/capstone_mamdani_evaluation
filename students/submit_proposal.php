@@ -64,8 +64,18 @@ if ($stage === 'proposal' && $latestProposal && proposal_evaluation_schema_avail
     }
 }
 if ($stage === 'final' && !proposal_allows_final_submission($project, $latestProposal)) {
-    header('Location: ' . $redirect . '&error=final_locked');
-    exit;
+    try {
+        if (proposal_revision_sync_accepted_submission($pdo, (int) $projectId, (int) ($latestProposal['id'] ?? 0))) {
+            $projectStmt->execute([(int) $projectId, $studentId]);
+            $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $exception) {
+        error_log('[student final defense] Accepted revision synchronization failed: ' . $exception->getMessage());
+    }
+    if (!proposal_allows_final_submission($project, $latestProposal)) {
+        header('Location: ' . $redirect . '&error=final_locked');
+        exit;
+    }
 }
 if (!$majorRevisionUpload && $latestStageSubmission && !in_array($latestStageSubmission['status'], ['revision_required', 'revision_requested'], true)
     && !empty($latestStageSubmission['stored_filename'])) {

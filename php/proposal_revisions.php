@@ -45,6 +45,45 @@ function proposal_revision_refresh_status(PDO $pdo, int $cycleId): array
     return $summary + ['status'=>$status];
 }
 
+/**
+ * A completed accepted cycle is the authoritative completion event for a
+ * revision-required proposal. The original Chairperson verdict remains part
+ * of the proposal record; it is not recalculated or replaced here.
+ */
+function proposal_revision_is_fully_accepted(?array $cycle, ?array $summary): bool
+{
+    return $cycle !== null
+        && ($cycle['status'] ?? '') === 'accepted'
+        && $summary !== null
+        && (int) ($summary['assigned_count'] ?? 0) > 0
+        && (int) ($summary['pending_count'] ?? 0) === 0
+        && (int) ($summary['returned_count'] ?? 0) === 0;
+}
+
+/**
+ * Reconcile revisions accepted under an earlier deployment with the
+ * authoritative project pointer. This only ever derives state from the latest
+ * completed accepted cycle; it does not modify scores or Chairperson verdicts.
+ */
+function proposal_revision_sync_accepted_submission(PDO $pdo, int $projectId, ?int $submissionId = null): bool
+{
+    $cycle = proposal_revision_cycle($pdo, $projectId);
+    if (!proposal_revision_is_fully_accepted($cycle, $cycle ? proposal_revision_review_summary($pdo, (int) $cycle['id']) : null)) {
+        return false;
+    }
+
+    $acceptedSubmissionId = (int) ($cycle['revision_submission_id'] ?? 0);
+    if ($acceptedSubmissionId <= 0 || ($submissionId !== null && $acceptedSubmissionId !== $submissionId)) {
+        return false;
+    }
+
+    $projectUpdate = $pdo->prepare('UPDATE projects SET proposal_revision_accepted_submission_id=? WHERE id=?');
+    $projectUpdate->execute([$acceptedSubmissionId, $projectId]);
+    $pdo->prepare("UPDATE student_submissions SET status='accepted' WHERE id=? AND project_id=? AND stage='proposal'")
+        ->execute([$acceptedSubmissionId, $projectId]);
+    return true;
+}
+
 function proposal_is_major_revision(array $recommendation): bool
 {
     return ($recommendation['label'] ?? '') === 'PASSED/APPROVED (Major Revision)';

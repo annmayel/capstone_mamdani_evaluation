@@ -3,20 +3,20 @@
 require_once __DIR__ . '/../php/submissions.php';
 
 $acceptedProposal = ['id' => 15];
-$chairOpenedRevision = [
+$panelAcceptedRevision = [
     'proposal_confirmed_at' => '2026-11-26 09:00:00',
     'proposal_official_verdict' => 'PASSED/APPROVED (Major Revision)',
     'proposal_required_revisions' => 'Address the panel feedback.',
     'proposal_revision_accepted_submission_id' => 15,
 ];
-if (!proposal_allows_final_submission($chairOpenedRevision, $acceptedProposal)) {
-    throw new RuntimeException('Final Defense must become available only after the Chairperson accepts the accepted revision.');
+if (!proposal_allows_final_submission($panelAcceptedRevision, $acceptedProposal)) {
+    throw new RuntimeException('Final Defense must become available immediately after the original panel accepts the revision.');
 }
 
-$panelAcceptedOnly = $chairOpenedRevision;
-$panelAcceptedOnly['proposal_revision_accepted_submission_id'] = null;
-if (proposal_allows_final_submission($panelAcceptedOnly, $acceptedProposal)) {
-    throw new RuntimeException('Panel acceptance alone must not unlock Final Defense submission.');
+$revisionStillPending = $panelAcceptedRevision;
+$revisionStillPending['proposal_revision_accepted_submission_id'] = null;
+if (proposal_allows_final_submission($revisionStillPending, $acceptedProposal)) {
+    throw new RuntimeException('Final Defense must remain locked until every original reviewer accepts the revision.');
 }
 
 $root = dirname(__DIR__);
@@ -35,6 +35,7 @@ foreach ([
     [$studentPortal, 'Final Defense Submission (Final Paper &amp; Project)'],
     [$studentPortal, 'Registered Project Title'],
     [$studentPortal, 'Evaluators Assigned'],
+    [$studentPortal, '$proposalStageCompleted'],
     [$studentPortal, 'final-defense.css'],
     [$chairView, 'Review Final Defense'],
     [$assignmentView, 'final_submission_id'],

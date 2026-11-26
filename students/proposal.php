@@ -90,21 +90,23 @@ if ($project) {
         }
     }
     $originalMajorRevision = (bool) ($proposalRecommendation && proposal_is_major_revision($proposalRecommendation));
-    $majorRevisionRequired = $originalMajorRevision
-        || ($revisionCycle && in_array($revisionCycle['status'], ['pending_panel_review', 'returned'], true));
     $revisionUploadState = proposal_revision_upload_state(
         $originalMajorRevision,
         $revisionSchemaReady,
         $revisionCycle,
         $revisionSummary
     );
-    $revisionAccepted = $revisionCycle !== null
-        && $revisionSubmission !== null
-        && ($revisionCycle['status'] ?? '') === 'accepted'
-        && $revisionSummary !== null
-        && (int) $revisionSummary['assigned_count'] > 0
-        && (int) $revisionSummary['pending_count'] === 0
-        && (int) $revisionSummary['returned_count'] === 0;
+    $revisionAccepted = proposal_revision_is_fully_accepted($revisionCycle, $revisionSummary)
+        && $revisionSubmission !== null;
+    if ($revisionAccepted && (int) ($project['proposal_revision_accepted_submission_id'] ?? 0) !== (int) $revisionSubmission['id']) {
+        try {
+            proposal_revision_sync_accepted_submission($pdo, (int) $project['id'], (int) $revisionSubmission['id']);
+            $project['proposal_revision_accepted_submission_id'] = (int) $revisionSubmission['id'];
+            $proposalSubmission = $revisionSubmission;
+        } catch (Throwable $exception) {
+            error_log('[student proposal] Accepted revision synchronization failed: ' . $exception->getMessage());
+        }
+    }
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
     $finalVerdictStmt->execute([(int) $project['id']]);
@@ -138,13 +140,16 @@ if ($finalSubmission) {
 $latestProposalStatus = stage_submission_status_label($proposalSubmission);
 $latestFinalStatus = stage_submission_status_label($finalSubmission);
 $finalUnlocked = $project && proposal_allows_final_submission($project, $proposalSubmission);
+$proposalStageCompleted = $finalUnlocked;
+$majorRevisionRequired = !$proposalStageCompleted && ($originalMajorRevision
+    || ($revisionCycle && in_array($revisionCycle['status'], ['pending_panel_review', 'returned'], true)));
 $proposalUploadAllowed = $majorRevisionRequired
     ? $revisionUploadState === 'allowed'
     : (!$proposalSubmission || empty($proposalSubmission['stored_filename'])
         || in_array($proposalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $finalUploadAllowed = $finalUnlocked && (!$finalSubmission || in_array($finalSubmission['status'], ['revision_required', 'revision_requested'], true));
 $finalDefenseState = !$finalUnlocked
-    ? ['label' => 'Locked', 'class' => 'muted', 'message' => 'Final Defense becomes available after the IT Chairperson officially approves the completed proposal stage and opens the next stage.']
+    ? ['label' => 'Locked', 'class' => 'muted', 'message' => 'Final Defense becomes available after the Proposal Stage is completed.']
     : (!$finalSubmission
         ? ['label' => 'Available', 'class' => 'success', 'message' => 'Proposal stage is complete. You can submit your Final Paper and Project for the Final Defense.']
         : match ((string) $finalSubmission['status']) {
@@ -244,8 +249,8 @@ $revisionProgressLabel = match ($revisionUploadState) {
               <div><small>Panel Evaluation Status</small><strong><?=esc($panelStatusLabel)?></strong><span><?=esc((string) ($proposalPanel['submitted_count'] ?? 0))?> of <?=esc((string) ($proposalPanel['assigned_count'] ?? 0))?> evaluators submitted</span></div>
             </div>
 
-            <?php if ($majorRevisionRequired || $revisionCycle): ?>
-              <div class="major-revision-notice <?= $revisionAccepted ? 'is-accepted' : '' ?>" role="status"><span aria-hidden="true"><?= $revisionAccepted ? '✓' : '!' ?></span><div><h3><?= $revisionAccepted ? 'Revision Accepted' : 'Major Revision Required' ?></h3><p><?= $revisionAccepted ? 'Your revised proposal has been reviewed and accepted by the original panel evaluator. Final Paper submission remains locked until the IT Chairperson formally opens the next stage.' : 'Address the original panel\'s comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.' ?></p></div></div>
+            <?php if ($revisionAccepted || (!$proposalStageCompleted && ($majorRevisionRequired || $revisionCycle))): ?>
+              <div class="major-revision-notice <?= $revisionAccepted ? 'is-accepted' : '' ?>" role="status"><span aria-hidden="true"><?= $revisionAccepted ? '✓' : '!' ?></span><div><h3><?= $revisionAccepted ? 'Revision Accepted' : 'Major Revision Required' ?></h3><p><?= $revisionAccepted ? 'Every original panel evaluator accepted your revised proposal. The Proposal Stage is complete and you may continue to Final Defense submission.' : 'Address the original panel\'s comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.' ?></p></div></div>
               <ol class="revision-progress" aria-label="Revision workflow progress">
                 <?php $steps = [1 => ['Major Revision Required', 'Review panel feedback'], 2 => ['Submit Revised Proposal', 'Upload your revised document'], 3 => ['Pending Panel Re-evaluation', 'Original panel is reviewing'], 4 => ['Revision Accepted or Returned', 'Panel decision recorded']]; ?>
                 <?php foreach ($steps as $number => [$title, $detail]): $complete = $revisionAccepted || $number < $revisionProgressStep; ?><li class="<?= $complete ? 'is-complete' : ($number === $revisionProgressStep ? 'is-current' : '')?>"><span><?= $complete ? '✓' : $number ?></span><div><strong><?=esc($title)?></strong><small><?=esc($detail)?></small></div></li><?php endforeach; ?>
@@ -262,7 +267,7 @@ $revisionProgressLabel = match ($revisionUploadState) {
                       <?php if (!empty($revisionSubmission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($revisionSubmission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php elseif (!empty($revisionSubmission['submission_url'])): ?><a class="btn ghost" href="<?=esc($revisionSubmission['submission_url'])?>" target="_blank" rel="noopener">Open Link</a><?php endif; ?>
                     </div>
                   </section>
-                  <aside class="revision-information-card revision-next-step"><span aria-hidden="true">i</span><div><h3>Next Step</h3><p>You can now prepare and submit your Final Paper once the IT Chairperson formally opens the Final Paper submission.</p></div></aside>
+                  <aside class="revision-information-card revision-next-step"><span aria-hidden="true">i</span><div><h3>Next Step</h3><p>Your Proposal Stage is complete. You can now prepare and submit your Final Paper and Project for the Final Defense.</p></div></aside>
                 </div>
               <?php else: ?>
               <div class="revision-workspace">
@@ -358,7 +363,7 @@ $revisionProgressLabel = match ($revisionUploadState) {
                 });
               ?></p>
             <?php endif; ?>
-            <?php if (!empty($project['proposal_required_revisions']) && !empty($project['proposal_confirmed_at'])): ?>
+            <?php if (!$proposalStageCompleted && !empty($project['proposal_required_revisions']) && !empty($project['proposal_confirmed_at'])): ?>
               <div class="proposal-student-revisions"><strong>Required Proposal Revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div>
             <?php endif; ?>
 
@@ -425,7 +430,7 @@ $revisionProgressLabel = match ($revisionUploadState) {
               <?php endforeach; ?>
               <?php if (!empty($project['proposal_confirmed_at']) && !empty($project['proposal_official_verdict'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson record: <?=esc($project['proposal_official_verdict'])?></strong><p>Confirmed <?=esc($formatDate($project['proposal_confirmed_at']))?></p></div><?php endif; ?>
               <?php if (!empty($project['proposal_chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson comments</strong><p><?=nl2br(esc($project['proposal_chairperson_comments']))?></p></div><?php endif; ?>
-              <?php if (!empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
+              <?php if (!$proposalStageCompleted && !empty($project['proposal_required_revisions'])): ?><div class="proposal-student-revisions"><strong>Authorized revisions</strong><p><?=nl2br(esc($project['proposal_required_revisions']))?></p></div><?php endif; ?>
               <?php if ($majorRevisionRequired): ?><div class="proposal-student-revisions"><strong>Major Revision Workflow</strong><p>1. Major Revision Required · 2. <?=$revisionCycle ? 'Revised Proposal Submitted' : 'Submit Revised Proposal'?> · 3. <?=$revisionCycle && $revisionCycle['status'] === 'pending_panel_review' ? 'Pending Panel Re-evaluation' : 'Panel Re-evaluation'?> · 4. <?=$revisionCycle ? esc(ucwords(str_replace('_', ' ', $revisionCycle['status']))) : 'Revision Accepted or Returned'?></p><?php if ($revisionSummary): ?><p><?=$revisionSummary['accepted_count']?> accepted · <?=$revisionSummary['pending_count']?> pending · <?=$revisionSummary['returned_count']?> returned</p><?php foreach ($revisionSummary['reviews'] as $review): if (($review['decision'] ?? 'pending') !== 'pending'): ?><p><strong><?=esc($review['full_name'])?>:</strong> <?=esc(ucfirst($review['decision']))?><?php if (!empty($review['comments'])): ?><br><?=nl2br(esc($review['comments']))?><?php endif; ?></p><?php endif; endforeach; ?><?php endif; ?></div><?php endif; ?>
             <?php endif; ?>
           </section><?php endif; ?>

@@ -26,7 +26,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
    $summary=proposal_revision_refresh_status($pdo,(int)$cycle['revision_cycle_id']);
    if($summary['status']==='accepted'){$pdo->prepare('UPDATE projects SET proposal_revision_accepted_submission_id=? WHERE id=?')->execute([(int)$cycle['revision_submission_id'],(int)$cycle['project_id']]);$pdo->prepare("UPDATE student_submissions SET status='accepted' WHERE id=?")->execute([(int)$cycle['revision_submission_id']]);}
    elseif($summary['status']==='returned')$pdo->prepare("UPDATE student_submissions SET status='revision_required' WHERE id=?")->execute([(int)$cycle['revision_submission_id']]);
-   $pdo->commit(); if($summary['pending_count']===0){$student=$pdo->prepare('SELECT u.id FROM projects p INNER JOIN users u ON u.id=p.student_id WHERE p.id=?');$student->execute([(int)$cycle['project_id']]);if($studentId=$student->fetchColumn())notify_user_once($pdo,(int)$studentId,'proposal-revision-complete:'.$cycleId,'Proposal revision panel review complete',$summary['status']==='accepted'?'The original panel accepted your revised proposal. The IT Chairperson must still approve the Final Paper stage.':'Your revised proposal was returned with additional panel feedback.','students/student_dashboard.php?view=proposal');}
+   $pdo->commit();
+   if($summary['pending_count']===0){
+    $student=$pdo->prepare('SELECT u.id FROM projects p INNER JOIN users u ON u.id=p.student_id WHERE p.id=?');
+    $student->execute([(int)$cycle['project_id']]);
+    if($studentId=$student->fetchColumn())notify_user_once($pdo,(int)$studentId,'proposal-revision-complete:'.$cycleId,'Proposal revision panel review complete',$summary['status']==='accepted'?'Every original panel evaluator accepted your revised proposal. The Proposal Stage is complete and Final Defense submission is now available.':'Your revised proposal was returned with additional panel feedback.','students/student_dashboard.php?view=proposal');
+    if($summary['status']==='accepted'){
+     foreach($pdo->query("SELECT id FROM users WHERE role='dean'")->fetchAll(PDO::FETCH_COLUMN) as $chairId){
+      notify_user_once($pdo,(int)$chairId,'proposal-revision-panel-accepted:'.$cycleId.':'.$chairId,'Proposal revision accepted','All original panel evaluators accepted a revised proposal. The student can now submit the Final Defense package.','dean/submissions.php');
+     }
+    }
+   }
    header('Location: review_proposal_revision.php?cycle_id='.$cycleId);exit;
   }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();$errors[]='The review could not be saved. Please try again.';error_log('[proposal revision] '.$e->getMessage());}}
 }

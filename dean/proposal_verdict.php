@@ -27,14 +27,7 @@ $canConfirmRevision = $published
     && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation'], true)
     && (int) ($project['proposal_revision_accepted_submission_id'] ?? 0) !== (int) $submission['id']
     && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
-$canAcceptRevisions = $published
-    && (
-        in_array($project['proposal_official_verdict'] ?? '', ['PASSED/APPROVED (Minor Revision)', 'PASSED/APPROVED (Major Revision)'], true)
-        || (($project['proposal_official_verdict'] ?? '') === 'PASSED/APPROVED (No Revision)' && trim((string) ($project['proposal_required_revisions'] ?? '')) !== '')
-    )
-    && $submissionReady
-    && in_array($submission['status'] ?? '', ['submitted', 'under_evaluation', 'accepted'], true)
-    && (int) ($project['proposal_verdict_submission_id'] ?? 0) !== (int) $submission['id'];
+$canAcceptRevisions = false;
 
 if ($project) {
     $proposalSchemaReady = proposal_evaluation_schema_available($pdo);
@@ -65,7 +58,7 @@ if ($project) {
         if (!csrf_check($_POST['csrf'] ?? '')) {
             $errors[] = 'Your session could not be verified. Refresh the page and try again.';
         } elseif (!$canAcceptRevisions) {
-            $errors[] = 'There is no revised proposal awaiting acceptance.';
+            $errors[] = 'Accepted proposal revisions are completed by the original panel and do not require Chairperson acceptance.';
         } else {
             try {
                 $pdo->beginTransaction();
