@@ -27,6 +27,8 @@ $proposalPanel = null;
 $proposalEvaluatorNames = [];
 $revisionCycle = null;
 $revisionSummary = null;
+$revisionSubmission = null;
+$revisionAccepted = false;
 $majorRevisionRequired = false;
 $revisionUploadState = 'not_required';
 $revisionSchemaReady = false;
@@ -69,6 +71,11 @@ if ($project) {
         $revisionHistoryStmt = $pdo->prepare('SELECT revision_submission_id, revision_number FROM proposal_revision_cycles WHERE project_id=?');
         $revisionHistoryStmt->execute([(int) $project['id']]);
         foreach ($revisionHistoryStmt->fetchAll(PDO::FETCH_ASSOC) as $revisionRow) $revisionNumbersBySubmission[(int) $revisionRow['revision_submission_id']] = (int) $revisionRow['revision_number'];
+        if ($revisionCycle) {
+            $revisionSubmissionStmt = $pdo->prepare('SELECT * FROM student_submissions WHERE id=? AND project_id=? AND student_id=? AND stage=\'proposal\' LIMIT 1');
+            $revisionSubmissionStmt->execute([(int) $revisionCycle['revision_submission_id'], (int) $project['id'], $studentId]);
+            $revisionSubmission = $revisionSubmissionStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
     }
     if ($revisionCycle && $proposalRecommendation === null && proposal_evaluation_schema_available($pdo)) {
         $originalPanel = proposal_panel_completion($pdo, (int) $project['id'], (int) $revisionCycle['original_submission_id']);
@@ -91,6 +98,13 @@ if ($project) {
         $revisionCycle,
         $revisionSummary
     );
+    $revisionAccepted = $revisionCycle !== null
+        && $revisionSubmission !== null
+        && ($revisionCycle['status'] ?? '') === 'accepted'
+        && $revisionSummary !== null
+        && (int) $revisionSummary['assigned_count'] > 0
+        && (int) $revisionSummary['pending_count'] === 0
+        && (int) $revisionSummary['returned_count'] === 0;
 
     $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
     $finalVerdictStmt->execute([(int) $project['id']]);
@@ -204,13 +218,26 @@ $revisionProgressLabel = match ($revisionUploadState) {
             </div>
 
             <?php if ($majorRevisionRequired || $revisionCycle): ?>
-              <div class="major-revision-notice" role="status"><span aria-hidden="true"><?= $revisionUploadState === 'accepted' ? '✓' : '!' ?></span><div><h3><?= $revisionUploadState === 'accepted' ? 'Revision Accepted' : 'Major Revision Required' ?></h3><p><?= $revisionUploadState === 'accepted' ? 'The original panel accepted your revised proposal. Final Paper submission remains locked until the IT Chairperson formally accepts the revision and opens the next stage.' : 'Address the original panel\'s comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.' ?></p></div></div>
+              <div class="major-revision-notice <?= $revisionAccepted ? 'is-accepted' : '' ?>" role="status"><span aria-hidden="true"><?= $revisionAccepted ? '✓' : '!' ?></span><div><h3><?= $revisionAccepted ? 'Revision Accepted' : 'Major Revision Required' ?></h3><p><?= $revisionAccepted ? 'Your revised proposal has been reviewed and accepted by the original panel evaluator. Final Paper submission remains locked until the IT Chairperson formally opens the next stage.' : 'Address the original panel\'s comments, recommendations, and required revisions. Your revised proposal will return to the same panel for re-evaluation.' ?></p></div></div>
               <ol class="revision-progress" aria-label="Revision workflow progress">
                 <?php $steps = [1 => ['Major Revision Required', 'Review panel feedback'], 2 => ['Submit Revised Proposal', 'Upload your revised document'], 3 => ['Pending Panel Re-evaluation', 'Original panel is reviewing'], 4 => ['Revision Accepted or Returned', 'Panel decision recorded']]; ?>
-                <?php foreach ($steps as $number => [$title, $detail]): ?><li class="<?=$number < $revisionProgressStep ? 'is-complete' : ($number === $revisionProgressStep ? 'is-current' : '')?>"><span><?= $number < $revisionProgressStep ? '✓' : $number ?></span><div><strong><?=esc($title)?></strong><small><?=esc($detail)?></small></div></li><?php endforeach; ?>
+                <?php foreach ($steps as $number => [$title, $detail]): $complete = $revisionAccepted || $number < $revisionProgressStep; ?><li class="<?= $complete ? 'is-complete' : ($number === $revisionProgressStep ? 'is-current' : '')?>"><span><?= $complete ? '✓' : $number ?></span><div><strong><?=esc($title)?></strong><small><?=esc($detail)?></small></div></li><?php endforeach; ?>
               </ol>
               <p class="revision-current-state"><strong>Current status:</strong> <?=esc($revisionProgressLabel)?><?php if ($revisionSummary): ?> · <?=esc((string) $revisionSummary['accepted_count'])?> accepted, <?=esc((string) $revisionSummary['pending_count'])?> pending, <?=esc((string) $revisionSummary['returned_count'])?> returned<?php endif; ?></p>
 
+              <?php if ($revisionAccepted && $revisionSubmission): ?>
+                <div class="revision-workspace revision-accepted-workspace">
+                  <section class="revision-upload-card revision-accepted-card" aria-labelledby="accepted-revision-heading">
+                    <div class="revision-card-heading"><span aria-hidden="true">✓</span><div><h3 id="accepted-revision-heading">Revised Proposal <em>(Accepted)</em></h3><p>Your submitted revised proposal has been reviewed and accepted.</p></div></div>
+                    <div class="accepted-revision-file">
+                      <span class="accepted-revision-file-mark" aria-hidden="true">PDF</span>
+                      <div><strong><?=esc($revisionSubmission['original_filename'])?></strong><small>Submitted <?=esc($formatDate($revisionSubmission['created_at']))?> · <b>Accepted</b></small></div>
+                      <?php if (!empty($revisionSubmission['stored_filename'])): ?><a class="btn ghost" href="view_submission.php?id=<?=esc($revisionSubmission['id'])?>" target="_blank" rel="noopener">View PDF</a><?php elseif (!empty($revisionSubmission['submission_url'])): ?><a class="btn ghost" href="<?=esc($revisionSubmission['submission_url'])?>" target="_blank" rel="noopener">Open Link</a><?php endif; ?>
+                    </div>
+                  </section>
+                  <aside class="revision-information-card revision-next-step"><span aria-hidden="true">i</span><div><h3>Next Step</h3><p>You can now prepare and submit your Final Paper once the IT Chairperson formally opens the Final Paper submission.</p></div></aside>
+                </div>
+              <?php else: ?>
               <div class="revision-workspace">
                 <section class="revision-upload-card" aria-labelledby="revision-upload-heading">
                   <div class="revision-card-heading"><span aria-hidden="true">⇧</span><div><h3 id="revision-upload-heading">Submit Revised Proposal</h3><p>Upload a PDF that addresses the panel comments and required revisions.</p></div></div>
@@ -242,9 +269,10 @@ $revisionProgressLabel = match ($revisionUploadState) {
                 </section>
                 <aside class="revision-information-card"><span aria-hidden="true">i</span><div><h3>Important</h3><p>Your revised proposal will be sent to your original assigned panel evaluators for re-evaluation. You will be notified once all evaluators have submitted their review.</p></div></aside>
               </div>
+              <?php endif; ?>
             <?php endif; ?>
 
-            <details class="panel-feedback-disclosure" <?= $majorRevisionRequired ? 'open' : '' ?>><summary><span aria-hidden="true">☷</span> View Panel Comments &amp; Required Revisions</summary><div class="panel-feedback-list">
+            <details class="panel-feedback-disclosure" <?= ($majorRevisionRequired || $revisionAccepted) ? 'open' : '' ?>><summary><span aria-hidden="true">☷</span> Panel Comments &amp; Decision</summary><div class="panel-feedback-list">
               <?php foreach ($proposalEvaluations as $evaluation): $evaluatorName = $proposalEvaluatorNames[(int) $evaluation['evaluator_id']] ?? 'Panel evaluator'; ?>
                 <article class="panel-feedback-card"><header><div><span class="panel-avatar" aria-hidden="true">●</span><strong><?=esc($evaluatorName)?></strong><small>Panel evaluator</small></div><b><?=number_format((float) $evaluation['total_score'], 2)?> / 100</b></header>
                   <?php if (trim((string) ($evaluation['overall_comments'] ?? '')) !== ''): ?><p><strong>Comments:</strong> <?=nl2br(esc($evaluation['overall_comments']))?></p><?php endif; ?>
@@ -253,6 +281,11 @@ $revisionProgressLabel = match ($revisionUploadState) {
                   <?php foreach ($proposalCriteria as $code => $criterion): $comment = trim((string) ($evaluation[$criterion['comment_key']] ?? '')); ?><?php if ($comment !== ''): ?><p class="criterion-comment"><strong><?=esc($code)?> · <?=esc($criterion['label'])?>:</strong> <?=nl2br(esc($comment))?></p><?php endif; ?><?php endforeach; ?>
                 </article>
               <?php endforeach; ?>
+              <?php if ($revisionSummary): ?>
+                <?php foreach ($revisionSummary['reviews'] as $review): if (($review['decision'] ?? 'pending') !== 'pending'): ?>
+                  <article class="panel-feedback-card revision-decision-feedback"><header><div><span class="panel-avatar" aria-hidden="true">✓</span><strong><?=esc($review['full_name'])?></strong><small>Revision decision</small></div><b class="revision-decision-pill <?=esc($review['decision'])?>"><?=esc($review['decision'] === 'accepted' ? 'Revision Accepted' : 'Returned for Further Corrections')?></b></header><?php if (trim((string) ($review['comments'] ?? '')) !== ''): ?><p><strong>Evaluator feedback:</strong> <?=nl2br(esc($review['comments']))?></p><?php endif; ?><?php if (!empty($review['submitted_at'])): ?><p class="revision-decision-date">Decision recorded <?=esc($formatDate($review['submitted_at']))?></p><?php endif; ?></article>
+                <?php endif; endforeach; ?>
+              <?php endif; ?>
             </div></details>
           </section>
         <?php endif; ?>

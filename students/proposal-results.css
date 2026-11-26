@@ -8,3 +8,19 @@
 .proposal-student-criterion p strong,.proposal-student-revisions strong{color:#315958}
 .proposal-student-revisions{margin-top:10px;padding:10px 12px;border-left:3px solid #65a69a;border-radius:4px;background:#f0f7f5}
 .proposal-student-revisions>strong{font-size:10px}
+
+/* Authoritative completed major-revision state. */
+.major-revision-notice.is-accepted{border-color:#a9dfb6;background:linear-gradient(90deg,#effbf2,#fafffb)}
+.major-revision-notice.is-accepted>span{background:#16813a}
+.major-revision-notice.is-accepted h3{color:#08742d}
+.major-revision-notice.is-accepted p{color:#28653a}
+.revision-accepted-workspace{margin-top:2px}
+.revision-accepted-card{border-color:#d8e9dd}
+.revision-accepted-card .revision-card-heading>span{background:#e5f7e9;color:#0c8134}
+.revision-accepted-card .revision-card-heading em{color:#08742d;font-style:normal}
+.accepted-revision-file{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #e3ebe5;border-radius:9px;background:#fcfefd}
+.accepted-revision-file-mark{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:6px;background:#fbece8;color:#b94939;font-size:9px;font-weight:800}
+.accepted-revision-file>div{min-width:0;flex:1}.accepted-revision-file strong,.accepted-revision-file small{display:block;overflow-wrap:anywhere}.accepted-revision-file strong{color:#21464a;font-size:12px}.accepted-revision-file small{margin-top:4px;color:#6c8184;font-size:10px}.accepted-revision-file b{color:#137635}
+.revision-next-step{background:linear-gradient(135deg,#edf8ff,#f9fcff)}
+.revision-decision-feedback{border-color:#cfe8d6;background:#fbfefc}.revision-decision-pill{padding:4px 7px;border-radius:999px;background:#e5f7e9;color:#08742d;font-size:9px}.revision-decision-pill.returned{background:#fff3e5;color:#9b602d}.revision-decision-date{color:#72858a!important;font-size:10px!important}
+@media (max-width:680px){.accepted-revision-file{align-items:flex-start;flex-wrap:wrap}.accepted-revision-file .btn{width:100%;text-align:center}.revision-decision-pill{white-space:normal;text-align:right}}
