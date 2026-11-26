@@ -69,7 +69,7 @@ try {
             <div class="submission-actions">
               <?php if ($submission['submission_id']): ?><button class="btn ghost" type="button" data-preview-submission="<?=esc($submission['submission_id'])?>">View <?= $isFinalDefense ? 'Final PDF' : 'PDF' ?></button><?php endif; ?>
               <?php if ($submission['submission_url']): ?><a class="btn ghost" target="_blank" rel="noopener" href="<?=esc($submission['submission_url'])?>">Open Project Link</a><?php endif; ?>
-              <a class="btn primary" href="assign_evaluators.php?project_id=<?=esc($submission['project_id'])?>">Assign Evaluators</a>
+              <a class="btn primary" href="assign_evaluators.php?project_id=<?=esc($submission['project_id'])?><?= $isFinalDefense ? '&amp;final_submission_id=' . esc($submission['submission_id']) : '' ?>"><?= $isFinalDefense ? 'Assign Final Hearing Evaluators' : 'Assign Evaluators' ?></a>
               <?php if ($isFinalDefense): ?><a class="btn ghost" href="e3_verdict.php?project_id=<?=esc($submission['project_id'])?>">Review Final Defense</a><?php else: ?><a class="btn ghost" href="proposal_verdict.php?project_id=<?=esc($submission['project_id'])?>">Review Proposal</a><?php endif; ?>
             </div>
           </td>

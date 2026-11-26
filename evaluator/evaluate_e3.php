@@ -3,11 +3,12 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/final_defense_assignments.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $projectId=(int)($_GET['project_id']??0);$requestedFinalSubmissionId=(int)($_GET['final_submission_id']??0);$evaluatorId=(int)$_SESSION['user']['id'];$submittedViewRequested=!empty($e3SubmittedView);
-$projectStmt=$pdo->prepare('SELECT p.*,a.status assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id=p.id WHERE p.id=? AND a.evaluator_id=? LIMIT 1');
-$projectStmt->execute([$projectId,$evaluatorId]);$project=$projectStmt->fetch(PDO::FETCH_ASSOC);
+$projectStmt=$pdo->prepare('SELECT * FROM projects WHERE id=? LIMIT 1');
+$projectStmt->execute([$projectId]);$project=$projectStmt->fetch(PDO::FETCH_ASSOC);
 if(!$project){header('Location: projects.php?evaluation_error=not_assigned');exit;}
 $proposalSubmission=latest_stage_submission($pdo,$projectId,'proposal');
 $finalSubmission=latest_stage_submission($pdo,$projectId,'final');
@@ -15,10 +16,14 @@ $finalPdf=$finalSubmission ? submission_pdf_path((string)($finalSubmission['stor
 if(!$finalSubmission||(int)($finalSubmission['project_id']??0)!==$projectId||($requestedFinalSubmissionId>0&&(int)$finalSubmission['id']!==$requestedFinalSubmissionId)||!in_array($finalSubmission['status'],['submitted','under_evaluation','accepted','revision_required'],true)||$finalPdf===null||!is_file($finalPdf)||!proposal_allows_final_submission($project,$proposalSubmission)){
  header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_submitted');exit;
 }
+if(!final_defense_evaluator_is_assigned($pdo,$projectId,(int)$finalSubmission['id'],$evaluatorId)){
+ header('Location: evaluate_selection.php?project_id='.$projectId.'&evaluation_error=final_not_assigned');exit;
+}
 if($finalSubmission['status']==='submitted'){
  $pdo->prepare("UPDATE student_submissions SET status='under_evaluation' WHERE id=? AND status='submitted'")->execute([(int)$finalSubmission['id']]);
  $finalSubmission['status']='under_evaluation';
 }
+$pdo->prepare('UPDATE final_defense_evaluator_assignments SET status=? WHERE project_id=? AND final_submission_id=? AND evaluator_id=? AND status=?')->execute(['in_evaluation',$projectId,(int)$finalSubmission['id'],$evaluatorId,'assigned']);
 $criteria=e3_criteria();$errors=[];$success='';
 $existingStmt=$pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');$existingStmt->execute([$projectId,$evaluatorId,(int)$finalSubmission['id']]);$existing=$existingStmt->fetch(PDO::FETCH_ASSOC)?:null;
 if($submittedViewRequested&&(!$existing||$existing['status']!=='submitted')){header('Location: evaluate_selection.php?project_id='.$projectId);exit;}
@@ -74,7 +79,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
      $i=$pdo->prepare('INSERT INTO e3_evaluations(project_id,evaluator_id,final_submission_id,fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,total_score,remarks,revisions,status,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
      $i->execute([$projectId,$evaluatorId,(int)$finalSubmission['id'],$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s')]);
     }
-    $pdo->prepare('UPDATE evaluator_assignments SET status=? WHERE project_id=? AND evaluator_id=?')->execute(['completed',$projectId,$evaluatorId]);
+    $pdo->prepare('UPDATE final_defense_evaluator_assignments SET status=? WHERE project_id=? AND final_submission_id=? AND evaluator_id=?')->execute(['completed',$projectId,(int)$finalSubmission['id'],$evaluatorId]);
     $verdictForHistory=e3_stage_verdict_from_score($total);
     $pdo->prepare('INSERT INTO evaluation_history(project_id,evaluator_id,evaluation_type,project_score,paper_score,overall_score,overall_rating) VALUES(?,?,?,?,?,?,?)')->execute([$projectId,$evaluatorId,'e3',$total,$total,$total,$verdictForHistory['label']]);
     $pdo->commit();$_SESSION['e3_flash']='E3 evaluation submitted. Total: '.number_format($total,2).'/100.';header('Location: evaluate_e3.php?project_id='.$projectId);exit;

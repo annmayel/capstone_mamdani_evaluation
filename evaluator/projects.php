@@ -4,11 +4,25 @@ require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/submissions.php';
 require_once __DIR__ . '/../php/proposal_revisions.php';
+require_once __DIR__ . '/../php/final_defense_assignments.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $evaluatorId = (int) $_SESSION['user']['id'];
-$stmt = $pdo->prepare('SELECT p.*, a.status AS assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id = p.id WHERE a.evaluator_id = ? ORDER BY p.id DESC');
-$stmt->execute([$evaluatorId]);
+if (final_defense_assignment_schema_available($pdo)) {
+    $stmt = $pdo->prepare(
+        'SELECT p.*,
+            EXISTS(SELECT 1 FROM evaluator_assignments a WHERE a.project_id = p.id AND a.evaluator_id = ?) AS proposal_assignment,
+            EXISTS(SELECT 1 FROM final_defense_evaluator_assignments f WHERE f.project_id = p.id AND f.evaluator_id = ?) AS final_assignment
+         FROM projects p
+         WHERE EXISTS(SELECT 1 FROM evaluator_assignments a WHERE a.project_id = p.id AND a.evaluator_id = ?)
+            OR EXISTS(SELECT 1 FROM final_defense_evaluator_assignments f WHERE f.project_id = p.id AND f.evaluator_id = ?)
+         ORDER BY p.id DESC'
+    );
+    $stmt->execute([$evaluatorId, $evaluatorId, $evaluatorId, $evaluatorId]);
+} else {
+    $stmt = $pdo->prepare('SELECT p.*, 1 AS proposal_assignment, 0 AS final_assignment FROM projects p INNER JOIN evaluator_assignments a ON a.project_id = p.id WHERE a.evaluator_id = ? ORDER BY p.id DESC');
+    $stmt->execute([$evaluatorId]);
+}
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $proposalSchemaReady = proposal_evaluation_schema_available($pdo);
 $proposalScoreColumns = array_column(proposal_criteria(), 'key');
@@ -26,7 +40,7 @@ foreach ($projects as &$project) {
         if ($latestSubmission) {
             $project['proposal_submission_id'] = (int) $latestSubmission['id'];
         }
-        if ($proposalSchemaReady) {
+        if ($proposalSchemaReady && !empty($project['proposal_assignment'])) {
             // Use the submission ID saved with the evaluator's sheet, rather
             // than assuming it is still the latest uploaded proposal. This
             // preserves the status and view link after a later revision upload.
@@ -76,14 +90,15 @@ foreach ($projects as &$project) {
             $project['final_submission_id'] = (int) $finalSubmission['id'];
             if (!proposal_allows_final_submission($project, $latestSubmission)) {
                 $project['evaluator_final_status'] = 'proposal_approval_required';
+            } elseif (!final_defense_evaluator_is_assigned($pdo, (int) $project['id'], (int) $finalSubmission['id'], $evaluatorId)) {
+                $project['evaluator_final_status'] = 'waiting_final_assignment';
             } else {
                 $finalEvaluationStmt = $pdo->prepare('SELECT status FROM e3_evaluations WHERE project_id=? AND evaluator_id=? AND final_submission_id=? ORDER BY id DESC LIMIT 1');
                 $finalEvaluationStmt->execute([(int) $project['id'], $evaluatorId, (int) $finalSubmission['id']]);
                 $project['evaluator_final_status'] = (string) ($finalEvaluationStmt->fetchColumn() ?: 'assigned');
                 $finalPanel = e3_consolidated($pdo, (int) $project['id'], (int) $finalSubmission['id']);
-                $assignmentCountStmt = $pdo->prepare('SELECT COUNT(DISTINCT evaluator_id) FROM evaluator_assignments WHERE project_id=?');
-                $assignmentCountStmt->execute([(int) $project['id']]);
-                $project['final_panel_complete'] = $finalPanel['evaluator_count'] > 0 && $finalPanel['evaluator_count'] >= (int) $assignmentCountStmt->fetchColumn();
+                $assignedCount = final_defense_assigned_evaluator_count($pdo, (int) $project['id'], (int) $finalSubmission['id']);
+                $project['final_panel_complete'] = $finalPanel['evaluator_count'] > 0 && $finalPanel['evaluator_count'] >= $assignedCount;
             }
         }
     } catch (PDOException $exception) {

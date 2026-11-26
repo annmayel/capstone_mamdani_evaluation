@@ -3,12 +3,18 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../php/proposal_evaluation.php';
 require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/submissions.php';
+require_once __DIR__ . '/../php/final_defense_assignments.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'evaluator') { header('Location: ../index.php'); exit; }
 $projectId = (int) ($_GET['project_id'] ?? 0);
 $evaluatorId = (int) $_SESSION['user']['id'];
-$stmt = $pdo->prepare('SELECT p.*, a.status AS assignment_status FROM projects p INNER JOIN evaluator_assignments a ON a.project_id = p.id WHERE p.id = ? AND a.evaluator_id = ? LIMIT 1');
-$stmt->execute([$projectId, $evaluatorId]);
+if (final_defense_assignment_schema_available($pdo)) {
+    $stmt = $pdo->prepare('SELECT p.*, EXISTS(SELECT 1 FROM evaluator_assignments a WHERE a.project_id = p.id AND a.evaluator_id = ?) AS proposal_assignment FROM projects p WHERE p.id = ? AND (EXISTS(SELECT 1 FROM evaluator_assignments a WHERE a.project_id = p.id AND a.evaluator_id = ?) OR EXISTS(SELECT 1 FROM final_defense_evaluator_assignments f WHERE f.project_id = p.id AND f.evaluator_id = ?)) LIMIT 1');
+    $stmt->execute([$evaluatorId, $projectId, $evaluatorId, $evaluatorId]);
+} else {
+    $stmt = $pdo->prepare('SELECT p.*, 1 AS proposal_assignment FROM projects p INNER JOIN evaluator_assignments a ON a.project_id = p.id WHERE p.id = ? AND a.evaluator_id = ? LIMIT 1');
+    $stmt->execute([$projectId, $evaluatorId]);
+}
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 $proposalSubmission = null;
@@ -26,7 +32,7 @@ try {
     $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
     $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
     $finalPdf = $finalSubmission ? submission_pdf_path((string) ($finalSubmission['stored_filename'] ?? '')) : null;
-    $proposalReady = $proposalSubmission
+    $proposalReady = !empty($project['proposal_assignment']) && $proposalSubmission
         && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
     if ($proposalReady && proposal_evaluation_schema_available($pdo)) {
         $evaluationStmt = $pdo->prepare(
@@ -44,7 +50,8 @@ try {
         && in_array($finalSubmission['status'], ['submitted', 'under_evaluation', 'accepted', 'revision_required'], true)
         && $finalPdf !== null
         && is_file($finalPdf)
-        && proposal_allows_final_submission($project, $proposalSubmission);
+        && proposal_allows_final_submission($project, $proposalSubmission)
+        && final_defense_evaluator_is_assigned($pdo, $projectId, (int) $finalSubmission['id'], $evaluatorId);
     if ($finalReady) {
         $finalEvaluationStmt = $pdo->prepare('SELECT status FROM e3_evaluations WHERE project_id=? AND final_submission_id=? AND evaluator_id=? ORDER BY id DESC LIMIT 1');
         $finalEvaluationStmt->execute([$projectId, (int) $finalSubmission['id'], $evaluatorId]);
@@ -52,9 +59,7 @@ try {
         $finalSubmitted = $finalEvaluationStatus === 'submitted';
         $finalDraft = $finalEvaluationStatus === 'draft';
         $finalPanel = e3_consolidated($pdo, $projectId, (int) $finalSubmission['id']);
-        $assignedCountStmt = $pdo->prepare('SELECT COUNT(DISTINCT evaluator_id) FROM evaluator_assignments WHERE project_id=?');
-        $assignedCountStmt->execute([$projectId]);
-        $assignedCount = (int) $assignedCountStmt->fetchColumn();
+        $assignedCount = final_defense_assigned_evaluator_count($pdo, $projectId, (int) $finalSubmission['id']);
         $finalPanelComplete = $finalPanel['evaluator_count'] > 0 && $finalPanel['evaluator_count'] >= $assignedCount;
     } elseif (!$finalSubmission) {
         $finalLockReason = 'Waiting for Final Paper';

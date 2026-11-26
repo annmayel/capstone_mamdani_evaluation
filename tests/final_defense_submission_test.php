@@ -23,16 +23,27 @@ $root = dirname(__DIR__);
 $submissionEndpoint = (string) file_get_contents($root . '/students/submit_proposal.php');
 $studentPortal = (string) file_get_contents($root . '/students/proposal.php');
 $chairView = (string) file_get_contents($root . '/dean/submissions.php');
+$assignmentView = (string) file_get_contents($root . '/dean/assign_evaluators.php');
+$evaluatorSelection = (string) file_get_contents($root . '/evaluator/evaluate_selection.php');
+$evaluatorEvaluation = (string) file_get_contents($root . '/evaluator/evaluate_e3.php');
+$verdictView = (string) file_get_contents($root . '/dean/e3_verdict.php');
+$assignmentMigration = (string) file_get_contents($root . '/sql/migrations/024_final_defense_evaluator_assignments.sql');
 
 foreach ([
-    'project_resource_url' => $submissionEndpoint,
-    "\$stage === 'final'" => $submissionEndpoint,
-    'Final Defense Submission (Final Paper &amp; Project)' => $studentPortal,
-    'Registered Project Title' => $studentPortal,
-    'Evaluators Assigned' => $studentPortal,
-    'final-defense.css' => $studentPortal,
-    'Review Final Defense' => $chairView,
-] as $required => $source) {
+    [$submissionEndpoint, 'project_resource_url'],
+    [$submissionEndpoint, "\$stage === 'final'"],
+    [$studentPortal, 'Final Defense Submission (Final Paper &amp; Project)'],
+    [$studentPortal, 'Registered Project Title'],
+    [$studentPortal, 'Evaluators Assigned'],
+    [$studentPortal, 'final-defense.css'],
+    [$chairView, 'Review Final Defense'],
+    [$assignmentView, 'final_submission_id'],
+    [$assignmentView, 'Assign Final Hearing Evaluators'],
+    [$evaluatorSelection, 'final_defense_evaluator_is_assigned'],
+    [$evaluatorEvaluation, 'final_defense_evaluator_is_assigned'],
+    [$verdictView, 'final_defense_assigned_evaluator_count'],
+    [$assignmentMigration, 'final_defense_evaluator_assignments'],
+] as [$source, $required]) {
     if (!str_contains($source, $required)) {
         throw new RuntimeException('Final Defense workflow marker missing: ' . $required);
     }

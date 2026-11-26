@@ -4,6 +4,7 @@ require_once __DIR__ . '/../php/e3.php';
 require_once __DIR__ . '/../php/fuzzy_engine.php';
 require_once __DIR__ . '/../php/submissions.php';
 require_once __DIR__ . '/../php/stage_submission_migration.php';
+require_once __DIR__ . '/../php/final_defense_assignments.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (empty($_SESSION['user']) || $_SESSION['user']['role'] !== 'dean') {
   header('Location: ../index.php');
@@ -22,7 +23,6 @@ if ($projectId <= 0) {
      FROM projects p LEFT JOIN users u ON u.id = p.student_id
      ORDER BY p.id DESC'
   )->fetchAll(PDO::FETCH_ASSOC);
-  $assignmentCountStmt = $pdo->prepare('SELECT COUNT(*) FROM evaluator_assignments WHERE project_id = ?');
   $verdictStmt = $pdo->prepare(
     'SELECT * FROM e3_final_verdicts
      WHERE project_id = ? AND final_submission_id = ? AND published_at IS NOT NULL
@@ -39,8 +39,9 @@ if ($projectId <= 0) {
     $proposal = latest_stage_submission($pdo, $listProjectId, 'proposal');
     $finalPaper = latest_stage_submission($pdo, $listProjectId, 'final');
     $summary = $finalPaper ? e3_consolidated($pdo, $listProjectId, (int) $finalPaper['id']) : null;
-    $assignmentCountStmt->execute([$listProjectId]);
-    $assignmentCount = (int) $assignmentCountStmt->fetchColumn();
+    $assignmentCount = $finalPaper
+      ? final_defense_assigned_evaluator_count($pdo, $listProjectId, (int) $finalPaper['id'])
+      : 0;
     $official = null;
     if ($finalPaper) {
       $verdictStmt->execute([$listProjectId, (int) $finalPaper['id']]);

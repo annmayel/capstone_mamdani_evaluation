@@ -1,10 +1,13 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../php/final_defense_assignments.php';
 require_dean_access();
 
 $message = '';
 $selectedProjectId = (int) ($_GET['project_id'] ?? 0);
+$selectedFinalSubmissionId = (int) ($_GET['final_submission_id'] ?? 0);
+$selectedStage = $selectedFinalSubmissionId > 0 ? 'final' : 'proposal';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? '')) {
         die('CSRF validation failed');
@@ -13,11 +16,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $projectId = intval($_POST['project_id'] ?? 0);
     $selected = $_POST['evaluators'] ?? [];
     $assignedBy = (int) ($_SESSION['user']['id'] ?? 0);
+    $assignmentStage = ($_POST['assignment_stage'] ?? 'proposal') === 'final' ? 'final' : 'proposal';
+    $finalSubmissionId = (int) ($_POST['final_submission_id'] ?? 0);
 
     if ($projectId > 0 && !empty($selected)) {
         $projectStmt = $pdo->prepare('SELECT title, student_id FROM projects WHERE id = ? LIMIT 1');
         $projectStmt->execute([$projectId]);
         $project = $projectStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$project) {
+            $message = 'The selected project is not available.';
+        } elseif ($assignmentStage === 'final') {
+            if (!final_defense_assignment_schema_available($pdo)) {
+                $message = 'Final Defense evaluator assignments require migration 024. No assignments were changed.';
+            } else {
+                $submissionStmt = $pdo->prepare("SELECT id FROM student_submissions WHERE id = ? AND project_id = ? AND stage = 'final' LIMIT 1");
+                $submissionStmt->execute([$finalSubmissionId, $projectId]);
+                if (!$submissionStmt->fetchColumn()) {
+                    $message = 'The selected Final Defense submission is not available.';
+                } else {
+                    $newAssignmentCount = 0;
+                    foreach ($selected as $evaluatorId) {
+                        $evaluatorId = intval($evaluatorId);
+                        if ($evaluatorId <= 0) continue;
+                        $existingStmt = $pdo->prepare('SELECT id FROM final_defense_evaluator_assignments WHERE final_submission_id = ? AND evaluator_id = ? LIMIT 1');
+                        $existingStmt->execute([$finalSubmissionId, $evaluatorId]);
+                        $isNewAssignment = !(int) $existingStmt->fetchColumn();
+                        $stmt = $pdo->prepare('INSERT INTO final_defense_evaluator_assignments (project_id, final_submission_id, evaluator_id, assigned_by, status) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE assigned_by = VALUES(assigned_by), status = VALUES(status), updated_at = CURRENT_TIMESTAMP');
+                        $stmt->execute([$projectId, $finalSubmissionId, $evaluatorId, $assignedBy, 'assigned']);
+                        if ($isNewAssignment) {
+                            $newAssignmentCount++;
+                            notify_user_once($pdo, $evaluatorId, 'final-defense-assigned:' . $finalSubmissionId . ':' . $evaluatorId, 'Final Hearing assignment', 'You have been assigned to review a specific Final Defense submission.', 'evaluator/projects.php');
+                        }
+                    }
+                    if ($newAssignmentCount > 0) {
+                        $pdo->prepare("UPDATE student_submissions SET status = 'under_evaluation' WHERE id = ? AND project_id = ? AND stage = 'final' AND status = 'submitted'")->execute([$finalSubmissionId, $projectId]);
+                        if (!empty($project['student_id'])) {
+                            notify_user_once($pdo, (int) $project['student_id'], 'student-final-defense-evaluator-assigned:' . $finalSubmissionId, 'Final Hearing evaluators assigned', 'The IT Chairperson assigned evaluators to your Final Defense submission.', 'students/proposal.php');
+                        }
+                    }
+                    $message = 'Final Defense evaluator assignment saved.';
+                }
+            }
+        } else {
             $newAssignmentCount = 0;
             foreach ($selected as $evaluatorId) {
                 $evaluatorId = intval($evaluatorId);
@@ -82,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $message = 'Evaluator assignment saved.';
+        }
     }
 }
 
@@ -91,6 +132,19 @@ $assignmentMap = [];
 $rows = $pdo->query('SELECT project_id, evaluator_id FROM evaluator_assignments ORDER BY project_id, evaluator_id')->fetchAll(PDO::FETCH_ASSOC);
 foreach ($rows as $row) {
     $assignmentMap[$row['project_id']][] = (int) $row['evaluator_id'];
+}
+$finalAssignmentMap = [];
+$selectedFinalSubmission = null;
+if (final_defense_assignment_schema_available($pdo)) {
+    $finalRows = $pdo->query('SELECT project_id, final_submission_id, evaluator_id FROM final_defense_evaluator_assignments ORDER BY project_id, final_submission_id, evaluator_id')->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($finalRows as $row) {
+        $finalAssignmentMap[(int) $row['final_submission_id']][] = (int) $row['evaluator_id'];
+    }
+}
+if ($selectedStage === 'final') {
+    $finalContextStmt = $pdo->prepare("SELECT s.id, s.project_id, s.original_filename, p.title FROM student_submissions s INNER JOIN projects p ON p.id = s.project_id WHERE s.id = ? AND s.project_id = ? AND s.stage = 'final' LIMIT 1");
+    $finalContextStmt->execute([$selectedFinalSubmissionId, $selectedProjectId]);
+    $selectedFinalSubmission = $finalContextStmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 ?>
 <!doctype html>
@@ -418,8 +472,8 @@ foreach ($rows as $row) {
     <header class="assignment-header">
       <div>
         <p class="assignment-kicker">Dean workspace</p>
-        <h1>Assign evaluators</h1>
-        <p>Pair each capstone project with the faculty members responsible for its review.</p>
+        <h1><?=$selectedFinalSubmission ? 'Assign Final Hearing Evaluators' : 'Assign evaluators'?></h1>
+        <p><?=$selectedFinalSubmission ? 'Assign evaluators to this specific Final Defense submission. Proposal assignments are not reused automatically.' : 'Pair each capstone project with the faculty members responsible for its proposal review.'?></p>
       </div>
       <div class="assignment-count"><strong><?=count($projects)?></strong>projects available</div>
     </header>
@@ -427,15 +481,22 @@ foreach ($rows as $row) {
 
     <form method="post" class="assignment-form">
       <input type="hidden" name="csrf" value="<?=csrf_token()?>">
+      <input type="hidden" name="assignment_stage" value="<?=esc($selectedFinalSubmission ? 'final' : 'proposal')?>">
+      <?php if ($selectedFinalSubmission): ?><input type="hidden" name="final_submission_id" value="<?=esc($selectedFinalSubmission['id'])?>"><?php endif; ?>
       <section class="assignment-card project-card">
         <label class="section-label" for="project-select">Project to assign</label>
-        <p class="section-hint">Choose a project to see and update its evaluator panel.</p>
-        <select class="project-select" id="project-select" name="project_id" required>
-          <option value="">Select a project</option>
-          <?php foreach ($projects as $project): ?>
-              <option value="<?=esc($project['id'])?>" <?=((int) $project['id'] === $selectedProjectId ? 'selected' : '')?>><?=esc($project['title'])?> (<?=esc($project['group_name'] ?? 'No group')?>)</option>
-          <?php endforeach; ?>
-        </select>
+        <?php if ($selectedFinalSubmission): ?>
+          <input type="hidden" name="project_id" value="<?=esc($selectedFinalSubmission['project_id'])?>">
+          <p class="section-hint"><strong><?=esc($selectedFinalSubmission['title'])?></strong><br>Final Defense submission: <?=esc($selectedFinalSubmission['original_filename'])?></p>
+        <?php else: ?>
+          <p class="section-hint">Choose a project to see and update its proposal evaluator panel.</p>
+          <select class="project-select" id="project-select" name="project_id" required>
+            <option value="">Select a project</option>
+            <?php foreach ($projects as $project): ?>
+                <option value="<?=esc($project['id'])?>" <?=((int) $project['id'] === $selectedProjectId ? 'selected' : '')?>><?=esc($project['title'])?> (<?=esc($project['group_name'] ?? 'No group')?>)</option>
+            <?php endforeach; ?>
+          </select>
+        <?php endif; ?>
       </section>
 
       <section class="assignment-card evaluator-card">
@@ -443,7 +504,7 @@ foreach ($rows as $row) {
         <p class="section-hint">Select one or more evaluators. Selected members are highlighted.</p>
         <div class="evaluator-grid">
           <?php foreach ($evaluators as $e): ?>
-            <?php $isAssigned = in_array((int) $e['id'], $assignmentMap[$selectedProjectId] ?? [], true); ?>
+            <?php $isAssigned = in_array((int) $e['id'], $selectedFinalSubmission ? ($finalAssignmentMap[(int) $selectedFinalSubmission['id']] ?? []) : ($assignmentMap[$selectedProjectId] ?? []), true); ?>
             <label class="evaluator-option">
               <input type="checkbox" name="evaluators[]" value="<?=esc($e['id'])?>" <?=$isAssigned ? 'checked' : ''?>>
               <span class="evaluator-details">
@@ -456,7 +517,7 @@ foreach ($rows as $row) {
       </section>
 
       <div class="assignment-actions">
-        <button class="btn primary" type="submit">Save Assignment</button>
+        <button class="btn primary" type="submit"><?=$selectedFinalSubmission ? 'Save Final Hearing Assignment' : 'Save Assignment'?></button>
         <a class="btn ghost" href="dashboard.php#submissions" target="_top">Review Submissions</a>
         <a class="btn ghost" href="dashboard.php#dashboard" target="_top">Back to Dashboard</a>
       </div>
@@ -464,8 +525,8 @@ foreach ($rows as $row) {
 
     <section class="current-assignments">
       <div class="current-heading">
-        <h2>Current assignments</h2>
-        <span>Live evaluator coverage by project</span>
+        <h2><?=$selectedFinalSubmission ? 'Final Hearing assignments' : 'Current assignments'?></h2>
+        <span><?=$selectedFinalSubmission ? 'Final submission #' . esc($selectedFinalSubmission['id']) . ' · ' . esc($selectedFinalSubmission['original_filename']) : 'Live evaluator coverage by project'?></span>
       </div>
       <div class="assignment-table-wrap">
       <table class="assignment-table">
@@ -476,7 +537,27 @@ foreach ($rows as $row) {
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($projects as $project): ?>
+          <?php if ($selectedFinalSubmission): ?>
+            <tr>
+              <td class="project-title"><?=esc($selectedFinalSubmission['title'])?><small style="display:block;margin-top:4px;color:var(--assignment-muted);">Final Defense · <?=esc($selectedFinalSubmission['original_filename'])?></small></td>
+              <td>
+                <?php $assignedFinalEvaluators = $finalAssignmentMap[(int) $selectedFinalSubmission['id']] ?? []; ?>
+                <?php if ($assignedFinalEvaluators): ?>
+                  <?php foreach ($assignedFinalEvaluators as $evaluatorId): ?>
+                    <?php
+                    $assigned = null;
+                    foreach ($evaluators as $e) {
+                        if ((int)$e['id'] === (int)$evaluatorId) { $assigned = $e; break; }
+                    }
+                    ?>
+                    <?php if ($assigned): ?><span class="evaluator-pill"><?=esc($assigned['full_name'])?></span><?php endif; ?>
+                  <?php endforeach; ?>
+                <?php else: ?>
+                  <span class="no-assignment">No Final Hearing evaluator assigned</span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php else: foreach ($projects as $project): ?>
             <tr>
               <td class="project-title"><?=esc($project['title'])?></td>
               <td>
@@ -499,7 +580,7 @@ foreach ($rows as $row) {
                 <?php endif; ?>
               </td>
             </tr>
-          <?php endforeach; ?>
+          <?php endforeach; endif; ?>
         </tbody>
       </table>
       </div>
