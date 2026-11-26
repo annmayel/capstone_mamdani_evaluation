@@ -1,13 +1,13 @@
-.selection-main { max-width: 1360px !important; }
+.selection-main { max-width: 1360px !important; overflow:hidden; }
 .selection-back { display:inline-flex; align-items:center; gap:8px; margin:0 0 17px; color:#4e696a; font-size:12px; font-weight:700; text-decoration:none; }
 .selection-back:hover { color:#0e5b38; }
 .selection-header { margin-bottom:22px; }
 .selection-header .main-header-text h1 { display:flex; align-items:center; gap:12px; }
 .selection-heading-icon { display:grid; place-items:center; width:40px; height:40px; border-radius:11px; background:#e5f3e9; color:#15703d; }
-.selection-heading-icon svg { width:25px; height:25px; }
+.selection-heading-icon svg { display:block; width:25px !important; height:25px !important; max-width:25px; max-height:25px; flex:0 0 25px; }
 .selection-project-banner { display:flex; align-items:center; gap:18px; margin:0 0 28px; padding:19px 22px; border:1px solid #cfe5da; border-radius:14px; background:linear-gradient(105deg,#f1fbf4,#f8fcfa); box-shadow:0 8px 22px rgba(18,80,55,.045); }
 .selection-project-icon { display:grid; place-items:center; flex:0 0 62px; width:62px; height:62px; border-radius:14px; background:#dff4e3; color:#16713d; }
-.selection-project-icon svg { width:31px; height:31px; }
+.selection-project-icon svg { display:block; width:31px !important; height:31px !important; max-width:31px; max-height:31px; flex:0 0 31px; }
 .selection-project-copy { min-width:0; }
 .selection-project-copy h2 { margin:0 0 9px; color:#153e30; font-size:22px; line-height:1.2; }
 .selection-project-meta { display:flex; flex-wrap:wrap; gap:8px 0; color:#4e6763; font-size:12px; }
@@ -21,8 +21,8 @@ a.selection-card:hover { transform:translateY(-3px); box-shadow:0 18px 38px rgba
 .selection-card-proposal { border-color:#79b987; background:linear-gradient(145deg,#fff 0%,#f5fff7 100%); }
 .selection-card-final { border-color:#ead9c9; background:linear-gradient(145deg,#fff 0%,#fffaf4 100%); }
 .selection-card-top { display:flex; align-items:center; gap:14px; }
-.selection-card-icon { display:grid; place-items:center; flex:0 0 72px; width:72px; height:72px; border-radius:15px; }
-.selection-card-icon svg { width:35px; height:35px; }
+.selection-card-icon { display:grid; place-items:center; flex:0 0 72px; width:72px; height:72px; overflow:hidden; border-radius:15px; }
+.selection-card-icon svg { display:block; width:35px !important; height:35px !important; max-width:35px; max-height:35px; flex:0 0 35px; }
 .proposal-icon { background:#ddf4e2; color:#14713c; }
 .hearing-icon { background:#fff0d5; color:#b87913; }
 .selection-card-heading { min-width:0; }

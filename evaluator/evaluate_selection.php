@@ -97,7 +97,7 @@ $email = trim((string) ($user['email'] ?? ''));
   <link rel="stylesheet" href="../assets/style.css?v=20261124">
   <link rel="stylesheet" href="evaluator-content.css?v=20261124">
   <link rel="stylesheet" href="evaluator-typography.css?v=20261124">
-  <link rel="stylesheet" href="evaluate_selection.css?v=20261124">
+  <link rel="stylesheet" href="evaluate_selection.css?v=20261126">
 </head>
 <body class="evaluator-content-page">
 <div class="dashboard-layout evaluator-layout">
