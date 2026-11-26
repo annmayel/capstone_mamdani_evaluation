@@ -154,6 +154,9 @@ if ($hasUpload) {
     $fileSize = 0;
 }
 
+$revisionPanel = [];
+$revisionCycleId = null;
+$submissionPersisted = false;
 try {
     $columnCheck = $pdo->query("SHOW COLUMNS FROM student_submissions LIKE 'submission_url'")->fetch(PDO::FETCH_ASSOC);
     if (!$columnCheck) {
@@ -163,6 +166,17 @@ try {
     if (!in_array('google_drive_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN google_drive_url VARCHAR(1000) DEFAULT NULL AFTER description');
     if (!in_array('github_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN github_url VARCHAR(1000) DEFAULT NULL AFTER google_drive_url');
     if (!in_array('other_project_url', $projectColumns, true)) $pdo->exec('ALTER TABLE projects ADD COLUMN other_project_url VARCHAR(1000) DEFAULT NULL AFTER github_url');
+
+    $pdo->beginTransaction();
+    $projectLock = $pdo->prepare('SELECT id FROM projects WHERE id=? AND student_id=? FOR UPDATE');
+    $projectLock->execute([(int) $projectId, $studentId]);
+    if (!$projectLock->fetchColumn()) throw new RuntimeException('The project is no longer available for this submission.');
+    if ($majorRevisionUpload) {
+        $lockedCycle = proposal_revision_cycle($pdo, (int) $projectId);
+        if ($lockedCycle && (!$previousRevisionCycle || (int) $lockedCycle['id'] !== (int) $previousRevisionCycle['id'])) {
+            throw new RuntimeException('A revised proposal is already awaiting panel review.');
+        }
+    }
     if ($stage === 'proposal' && array_key_exists('project_title', $_POST)) {
         $pdo->prepare('UPDATE projects SET title = ?, google_drive_url = ?, github_url = ?, other_project_url = ? WHERE id = ? AND student_id = ?')->execute([
             $projectTitle,
@@ -183,18 +197,26 @@ try {
             $originalSubmissionId = $previousRevisionCycle ? (int) $previousRevisionCycle['original_submission_id'] : (int) $latestProposal['id'];
             $assignedStmt = $pdo->prepare("SELECT DISTINCT pe.evaluator_id,u.full_name,u.email FROM proposal_evaluations pe INNER JOIN users u ON u.id=pe.evaluator_id AND u.role='evaluator' WHERE pe.project_id=? AND pe.proposal_submission_id=? AND pe.status='submitted'");
             $assignedStmt->execute([(int) $projectId, $originalSubmissionId]);
-            $originalPanel = $assignedStmt->fetchAll(PDO::FETCH_ASSOC);
-            if (!$originalPanel) throw new RuntimeException('The original assigned panel could not be identified for this revision.');
+            $revisionPanel = $assignedStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$revisionPanel) throw new RuntimeException('The original assigned panel could not be identified for this revision.');
             $numberStmt = $pdo->prepare('SELECT COALESCE(MAX(revision_number),0)+1 FROM proposal_revision_cycles WHERE project_id=?');
             $numberStmt->execute([(int) $projectId]);
             $revisionNumber = (int) $numberStmt->fetchColumn();
             $cycleStmt = $pdo->prepare('INSERT INTO proposal_revision_cycles (project_id,original_submission_id,revision_submission_id,revision_number) VALUES (?,?,?,?)');
             $cycleStmt->execute([(int) $projectId, $originalSubmissionId, $submissionId, $revisionNumber]);
-            $cycleId = (int) $pdo->lastInsertId();
-            foreach ($originalPanel as $evaluator) {
-                $pdo->prepare('INSERT INTO proposal_revision_reviews (revision_cycle_id,evaluator_id) VALUES (?,?)')->execute([$cycleId, (int) $evaluator['evaluator_id']]);
-                notify_user_once($pdo, (int) $evaluator['evaluator_id'], 'proposal-revision:' . $cycleId . ':' . (int) $evaluator['evaluator_id'], 'Revised proposal ready for review', 'A student submitted a revised proposal that requires your panel decision.', 'evaluator/review_proposal_revision.php?cycle_id=' . $cycleId);
+            $revisionCycleId = (int) $pdo->lastInsertId();
+            foreach ($revisionPanel as $evaluator) {
+                $pdo->prepare('INSERT INTO proposal_revision_reviews (revision_cycle_id,evaluator_id) VALUES (?,?)')->execute([$revisionCycleId, (int) $evaluator['evaluator_id']]);
             }
+        }
+    }
+    $pdo->commit();
+    $submissionPersisted = true;
+
+    try {
+    if ($revisionCycleId !== null) {
+        foreach ($revisionPanel as $evaluator) {
+            notify_user_once($pdo, (int) $evaluator['evaluator_id'], 'proposal-revision:' . $revisionCycleId . ':' . (int) $evaluator['evaluator_id'], 'Revised proposal ready for review', 'A student submitted a revised proposal that requires your panel decision.', 'evaluator/review_proposal_revision.php?cycle_id=' . $revisionCycleId);
         }
     }
     $stageName = $stage === 'proposal' ? 'Proposal' : 'Final Paper';
@@ -221,27 +243,33 @@ try {
             'portal_path' => '/students/student_dashboard.php?view=proposal',
         ]);
     }
-    $deans = $pdo->query("SELECT id, full_name, email FROM users WHERE role = 'dean'")->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($deans as $dean) {
-        notify_user_once($pdo, (int) $dean['id'], 'submission-review:' . $submissionId . ':' . (int) $dean['id'], 'New capstone submission', 'A student submitted a ' . strtolower($stageName) . '. Review it and assign an evaluator.', 'dean/dashboard.php#submissions');
-        fuzzy_email_notify($pdo, [
-            'event_key' => 'submission_for_review:' . $submissionId . ':' . (int) $dean['id'],
-            'event_type' => 'submission_for_review',
-            'recipient_user_id' => (int) $dean['id'],
-            'recipient_email' => (string) $dean['email'],
-            'recipient_name' => (string) $dean['full_name'],
-            'project_id' => (int) $projectId,
-            'submission_id' => $submissionId,
-            'subject' => 'A new ' . strtolower($stageName) . ' is awaiting review',
-            'heading' => 'New ' . strtolower($stageName),
-            'intro' => 'A student submitted a ' . strtolower($stageName) . '. Review the submission and assign an evaluator.',
-            'sections' => [['title' => 'Submission details', 'rows' => [['Submission reference', '#' . $submissionId], ['Stage', $stageName], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Status', 'Submitted']]]],
-            'portal_path' => '/dean/dashboard.php#submissions',
-        ]);
+    if (!$majorRevisionUpload) {
+        $deans = $pdo->query("SELECT id, full_name, email FROM users WHERE role = 'dean'")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($deans as $dean) {
+            notify_user_once($pdo, (int) $dean['id'], 'submission-review:' . $submissionId . ':' . (int) $dean['id'], 'New capstone submission', 'A student submitted a ' . strtolower($stageName) . '. Review it and assign an evaluator.', 'dean/dashboard.php#submissions');
+            fuzzy_email_notify($pdo, [
+                'event_key' => 'submission_for_review:' . $submissionId . ':' . (int) $dean['id'],
+                'event_type' => 'submission_for_review',
+                'recipient_user_id' => (int) $dean['id'],
+                'recipient_email' => (string) $dean['email'],
+                'recipient_name' => (string) $dean['full_name'],
+                'project_id' => (int) $projectId,
+                'submission_id' => $submissionId,
+                'subject' => 'A new ' . strtolower($stageName) . ' is awaiting review',
+                'heading' => 'New ' . strtolower($stageName),
+                'intro' => 'A student submitted a ' . strtolower($stageName) . '. Review the submission and assign an evaluator.',
+                'sections' => [['title' => 'Submission details', 'rows' => [['Submission reference', '#' . $submissionId], ['Stage', $stageName], ['Project title', $projectTitle], ['Submitted item', $originalName], ['Status', 'Submitted']]]],
+                'portal_path' => '/dean/dashboard.php#submissions',
+            ]);
+        }
+    }
+    } catch (Throwable $notificationException) {
+        error_log('[proposal submission notifications] ' . $notificationException->getMessage());
     }
 } catch (Throwable $exception) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('[proposal submission] ' . $exception->getMessage());
-    if ($destination) @unlink($destination);
+    if (!$submissionPersisted && $destination) @unlink($destination);
     header('Location: ' . $redirect . '&error=save_failed');
     exit;
 }

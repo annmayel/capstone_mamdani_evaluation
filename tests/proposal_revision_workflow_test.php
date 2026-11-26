@@ -20,7 +20,7 @@ if ($accepted['status'] !== 'accepted') throw new RuntimeException('All accepted
 $pdo->exec("UPDATE proposal_revision_reviews SET decision='returned' WHERE id=1");
 $pdo->exec("UPDATE proposal_revision_reviews SET decision='pending',comments=NULL,submitted_at=NULL WHERE id=2");
 $returned = proposal_revision_refresh_status($pdo, 1);
-if ($returned['status'] !== 'returned' || $returned['pending_count'] !== 1) throw new RuntimeException('A return must be recorded while the remaining panel review stays pending.');
+if ($returned['status'] !== 'pending_panel_review' || $returned['pending_count'] !== 1) throw new RuntimeException('A return must not finalize the revision while another panel review is pending.');
 $pdo->exec("UPDATE proposal_revision_reviews SET decision='accepted',comments='Addressed',submitted_at='2026-11-26 12:03:00' WHERE id=2");
 $returnedComplete = proposal_revision_refresh_status($pdo, 1);
 if ($returnedComplete['status'] !== 'returned' || $returnedComplete['pending_count'] !== 0) throw new RuntimeException('A replacement revision may begin only after the returned panel cycle is complete.');

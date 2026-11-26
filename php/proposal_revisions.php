@@ -35,7 +35,12 @@ function proposal_revision_review_summary(PDO $pdo, int $cycleId): array
 function proposal_revision_refresh_status(PDO $pdo, int $cycleId): array
 {
     $summary = proposal_revision_review_summary($pdo, $cycleId);
-    $status = $summary['returned_count'] > 0 ? 'returned' : ($summary['pending_count'] === 0 && $summary['assigned_count'] > 0 ? 'accepted' : 'pending_panel_review');
+    // The panel decision is not final until every original reviewer has
+    // responded. A single return must not reopen the student upload while
+    // other panel decisions are still pending.
+    $status = $summary['pending_count'] > 0
+        ? 'pending_panel_review'
+        : ($summary['returned_count'] > 0 ? 'returned' : ($summary['assigned_count'] > 0 ? 'accepted' : 'pending_panel_review'));
     $pdo->prepare('UPDATE proposal_revision_cycles SET status=?, completed_at=? WHERE id=?')->execute([$status, $status === 'pending_panel_review' ? null : date('Y-m-d H:i:s'), $cycleId]);
     return $summary + ['status'=>$status];
 }
