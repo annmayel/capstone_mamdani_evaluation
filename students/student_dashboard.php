@@ -119,11 +119,19 @@ $stmt->execute([$uid]);
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 $project = $project ?: null;
 $latestProposalSubmission = null;
+$latestFinalSubmission = null;
 $proposalPanel = null;
 $proposalPanelEvaluatorNames = [];
+$finalDefensePanel = null;
+$finalDefenseComputedResult = null;
+$finalDefenseRecommendation = null;
+$finalDefenseOfficialVerdict = null;
+$hasFinalDefenseComputedResult = false;
+$hasPendingFinalDefenseEvaluation = false;
 if ($project) {
     try {
         $latestProposalSubmission = latest_stage_submission($pdo, (int) $project['id'], 'proposal');
+        $latestFinalSubmission = latest_stage_submission($pdo, (int) $project['id'], 'final');
     } catch (PDOException $exception) {
         error_log('[student dashboard] Could not load the current proposal submission: ' . $exception->getMessage());
     }
@@ -137,6 +145,38 @@ if ($project) {
             error_log('[student dashboard] Could not load proposal panel completion: ' . $exception->getMessage());
         }
     }
+    if ($latestFinalSubmission && final_defense_assignment_schema_available($pdo)) {
+        try {
+            $finalDefensePanel = e3_final_defense_panel_completion(
+                $pdo,
+                (int) $project['id'],
+                (int) $latestFinalSubmission['id']
+            );
+            $hasFinalDefenseComputedResult = (bool) $finalDefensePanel['ready'];
+            if ($hasFinalDefenseComputedResult) {
+                $finalDefenseComputedResult = $finalDefensePanel['consolidated'];
+                $finalDefenseRecommendation = e3_stage_verdict_from_score(
+                    (float) $finalDefenseComputedResult['calculated_score']
+                );
+            }
+
+            $finalVerdictStmt = $pdo->prepare(
+                'SELECT * FROM e3_final_verdicts
+                 WHERE project_id = ? AND final_submission_id = ? AND published_at IS NOT NULL
+                 ORDER BY id DESC LIMIT 1'
+            );
+            $finalVerdictStmt->execute([(int) $project['id'], (int) $latestFinalSubmission['id']]);
+            $finalDefenseOfficialVerdict = $finalVerdictStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $exception) {
+            error_log('[student dashboard] Could not load Final Defense panel result: ' . $exception->getMessage());
+            $finalDefensePanel = null;
+            $finalDefenseComputedResult = null;
+            $finalDefenseRecommendation = null;
+            $finalDefenseOfficialVerdict = null;
+            $hasFinalDefenseComputedResult = false;
+        }
+    }
+    $hasPendingFinalDefenseEvaluation = $latestFinalSubmission !== null && !$hasFinalDefenseComputedResult;
 }
 if ($view === 'results' && $project) {
     try {
@@ -373,6 +413,32 @@ $rating = $officialVerdict['label'] ?? 'Not evaluated';
 $ratingDescription = $officialVerdict['description'] ?? '';
 $ratingNextStep = $officialVerdict['next_step'] ?? '';
 $evaluationStatus = $hasFinalResult ? 'Complete' : (($hasProjectEvaluation || $hasPaperEvaluation) ? 'In progress' : 'Awaiting evaluation');
+$overviewScore = $overallScore;
+$overviewFuzzyScore = null;
+$overviewFuzzyRating = null;
+$overviewRecommendation = $rating;
+$overviewOfficialVerdict = $hasFinalResult ? $rating : 'Not evaluated';
+$overviewResultDescription = $ratingDescription;
+if ($hasFinalDefenseComputedResult && $finalDefenseComputedResult && $finalDefenseRecommendation) {
+    $overviewScore = (float) $finalDefenseComputedResult['calculated_score'];
+    $overviewFuzzyScore = (float) $finalDefenseRecommendation['fuzzy']['defuzz'];
+    $overviewFuzzyRating = (string) $finalDefenseRecommendation['fuzzy']['rating'];
+    $overviewRecommendation = (string) $finalDefenseRecommendation['label'];
+    $overviewOfficialVerdict = $finalDefenseOfficialVerdict
+        ? (string) $finalDefenseOfficialVerdict['verdict_label']
+        : 'Official Verdict Pending';
+    $overviewResultDescription = $finalDefenseOfficialVerdict
+        ? 'The IT Chairperson has confirmed the official Final Defense verdict.'
+        : 'All assigned Final Hearing evaluators submitted their evaluations. The computed panel result is available while the official verdict is pending IT Chairperson confirmation.';
+} elseif ($hasPendingFinalDefenseEvaluation) {
+    // A submitted Final Defense supersedes proposal-era aggregates on the
+    // Overview. Do not present an older proposal score as a Final Hearing
+    // result while this exact assignment panel is incomplete.
+    $overviewScore = null;
+    $overviewRecommendation = 'Pending';
+    $overviewOfficialVerdict = 'Official Verdict Pending';
+    $overviewResultDescription = 'Your Final Defense submission is awaiting completion of the assigned Final Hearing evaluations. Scores and recommendations will appear after every assigned evaluator submits.';
+}
 $highestCriteriaScores = [];
 if ($projectEvaluation) {
     foreach ($criteria as $key => $label) {
@@ -713,7 +779,14 @@ if ($view === 'history') {
     $historyPage = min($historyPage, $historyPageCount);
     $historyPageRecords = array_slice($historyFilteredRecords, ($historyPage - 1) * 10, 10);
 }
-$steps = [['Proposal submitted', $latestSubmission ? $formatDate($latestSubmission['created_at']) : 'Not submitted', (bool) $latestSubmission], ['System evaluation', $hasProjectEvaluation ? 'Panel average available' : 'Waiting for evaluator', $hasProjectEvaluation], ['Paper evaluation', $hasPaperEvaluation ? 'Panel average available' : 'Waiting for evaluator', $hasPaperEvaluation], ['Official decision', $hasFinalResult ? $rating : 'Awaiting both panel averages', $hasFinalResult]];
+$steps = $hasFinalDefenseComputedResult
+    ? [
+        ['Final Paper & Project submitted', $latestFinalSubmission ? $formatDate($latestFinalSubmission['created_at']) : 'Submitted', true],
+        ['Panel evaluation', 'All assigned Final Hearing evaluators submitted', true],
+        ['Evaluation completed', number_format((float) $overviewScore, 2) . ' / 100 computed panel result', true],
+        ['Official verdict', $finalDefenseOfficialVerdict ? $overviewOfficialVerdict : 'Pending IT Chairperson confirmation', (bool) $finalDefenseOfficialVerdict],
+    ]
+    : [['Proposal submitted', $latestSubmission ? $formatDate($latestSubmission['created_at']) : 'Not submitted', (bool) $latestSubmission], ['System evaluation', $hasProjectEvaluation ? 'Panel average available' : 'Waiting for evaluator', $hasProjectEvaluation], ['Paper evaluation', $hasPaperEvaluation ? 'Panel average available' : 'Waiting for evaluator', $hasPaperEvaluation], ['Official decision', $hasFinalResult ? $rating : 'Awaiting both panel averages', $hasFinalResult]];
 $uploadMessages = ['uploaded' => 'Proposal submitted successfully.', 'invalid_pdf' => 'Only valid PDF files up to 10 MB are accepted.', 'upload_failed' => 'The proposal upload failed. Please try again.', 'storage_failed' => 'The proposal could not be saved. Please contact the administrator.', 'save_failed' => 'The proposal could not be recorded. Please contact the administrator.', 'no_project' => 'A project record is required before submitting a proposal.', 'invalid_request' => 'The submission request could not be verified.'];
 $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '');
 ?>
@@ -722,15 +795,17 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
 <?php require __DIR__ . '/sidebar.php'; ?>
 <main class="student-main"><header class="student-topbar"><div><span class="eyebrow">CAPSTONE EVALUATION SYSTEM</span><strong>Student Portal</strong></div><div class="student-account"><span class="student-avatar"><?=esc($initial)?></span><span><strong><?=esc($displayName)?></strong><small>Student</small></span></div></header><div class="student-content">
 <?php if ($verificationSuccess !== ''): ?><div class="register-alert is-success" role="status"><?=esc($verificationSuccess)?></div><?php endif; ?>
-<?php if ($view === 'overview'): ?><div class="student-page-heading"><div><h1>Student Dashboard</h1><p>Track your BSIT capstone project and fuzzy evaluation progress.</p></div><span class="status-pill <?=$statusClass?>">● <?=esc($status)?></span></div>
-<section class="project-banner"><div><span class="banner-kicker">CURRENT CAPSTONE PROJECT</span><h2><?=esc($project['title'] ?? 'No capstone project assigned yet')?></h2><p><?=esc($project['code'] ?? 'Awaiting project registration')?> · <?=esc($project['academic_year'] ?? 'Academic year not set')?></p><a class="btn primary" href="?view=<?=$projectActionView?>"><?=esc($projectActionLabel)?></a></div><div class="banner-score"><small class="banner-result-label">FINAL VERDICT</small><strong class="banner-verdict"><?=esc($rating)?></strong><span class="banner-score-value"><?php if ($hasFinalResult): ?><?=number_format($overallScore, 2)?> <em>/ 100</em><?php else: ?>Awaiting final score<?php endif; ?></span></div></section>
+<?php if ($view === 'overview'): ?><div class="student-page-heading"><div><h1>Student Dashboard</h1><p>Track your BSIT capstone project and fuzzy evaluation progress.</p></div><span class="status-pill <?=$hasFinalDefenseComputedResult ? 'success' : ($hasPendingFinalDefenseEvaluation ? 'info' : $statusClass)?>">● <?=esc($hasFinalDefenseComputedResult ? 'Evaluation Completed' : ($hasPendingFinalDefenseEvaluation ? 'Awaiting Evaluation' : $status))?></span></div>
+<section class="project-banner"><div><span class="banner-kicker">CURRENT CAPSTONE PROJECT</span><h2><?=esc($project['title'] ?? 'No capstone project assigned yet')?></h2><p><?=esc($project['code'] ?? 'Awaiting project registration')?> · <?=esc($project['academic_year'] ?? 'Academic year not set')?></p><a class="btn primary" href="?view=<?=$projectActionView?>"><?=esc($projectActionLabel)?></a></div><div class="banner-score"><small class="banner-result-label"><?=$hasFinalDefenseComputedResult ? 'OFFICIAL VERDICT' : ($hasPendingFinalDefenseEvaluation ? 'FINAL DEFENSE STATUS' : 'FINAL VERDICT')?></small><strong class="banner-verdict"><?=esc($hasFinalDefenseComputedResult ? $overviewOfficialVerdict : ($hasPendingFinalDefenseEvaluation ? 'Awaiting Evaluation' : $rating))?></strong><span class="banner-score-value"><?php if ($hasFinalDefenseComputedResult): ?><?=number_format((float) $overviewScore, 2)?> <em>/ 100</em><?php elseif ($hasPendingFinalDefenseEvaluation): ?>Awaiting final score<?php elseif ($hasFinalResult): ?><?=number_format($overallScore, 2)?> <em>/ 100</em><?php else: ?>Awaiting final score<?php endif; ?></span></div></section>
 <section class="portal-panel verdict-description-card" aria-labelledby="verdict-description-title">
   <div class="verdict-description-heading">
     <span class="verdict-description-icon" aria-hidden="true">▤</span>
     <div>
       <span class="eyebrow">RESULT EXPLANATION</span>
       <h2 id="verdict-description-title">Final Verdict Description</h2>
-      <?php if ($hasFinalResult): ?>
+      <?php if ($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation): ?>
+        <p><?=esc($overviewResultDescription)?></p>
+      <?php elseif ($hasFinalResult): ?>
         <p><?=esc($ratingDescription)?></p>
       <?php elseif ($hasProjectEvaluation || $hasPaperEvaluation): ?>
         <p>Your result is provisional while the panel's project and paper evaluations are completed. The official verdict will appear when both component averages are available.</p>
@@ -740,12 +815,12 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
     </div>
   </div>
   <div class="verdict-summary-grid">
-    <div class="verdict-summary-item"><small>FINAL AVERAGE SCORE</small><strong><?=$hasFinalResult ? number_format($overallScore, 2) . ' / 100' : 'Pending'?></strong></div>
-    <div class="verdict-summary-item"><small>ROUNDED CLASSIFICATION SCORE</small><strong><?=$hasFinalResult ? (int) $officialVerdict['rounded_score'] . ' / 100' : 'Pending'?></strong></div>
-    <div class="verdict-summary-item"><small>VERDICT</small><strong><?=esc($rating)?></strong></div>
-    <div class="verdict-summary-item"><small>RECOMMENDED NEXT STEP</small><strong><?=esc($ratingNextStep ?: 'Pending')?></strong></div>
-    <div class="verdict-summary-item"><small>EVALUATION STATUS</small><strong><?=esc($evaluationStatus)?></strong></div>
-    <div class="verdict-summary-item"><small>PROJECT STATUS</small><strong><?=esc($status)?></strong></div>
+    <div class="verdict-summary-item"><small><?=($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation) ? 'FINAL DEFENSE SCORE' : 'FINAL AVERAGE SCORE'?></small><strong><?=$hasFinalDefenseComputedResult ? number_format((float) $overviewScore, 2) . ' / 100' : ($hasPendingFinalDefenseEvaluation ? 'Pending' : ($hasFinalResult ? number_format($overallScore, 2) . ' / 100' : 'Pending'))?></strong></div>
+    <div class="verdict-summary-item"><small><?=($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation) ? 'MAMDANI FUZZY SCORE' : 'ROUNDED CLASSIFICATION SCORE'?></small><strong><?=$hasFinalDefenseComputedResult ? number_format((float) $overviewFuzzyScore, 2) . ' / 100' : ($hasPendingFinalDefenseEvaluation ? 'Pending' : ($hasFinalResult ? (int) $officialVerdict['rounded_score'] . ' / 100' : 'Pending'))?></strong></div>
+    <div class="verdict-summary-item"><small><?=($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation) ? 'FUZZY LINGUISTIC RATING' : 'VERDICT'?></small><strong><?=esc($hasFinalDefenseComputedResult ? $overviewFuzzyRating : ($hasPendingFinalDefenseEvaluation ? 'Pending' : $rating))?></strong></div>
+    <div class="verdict-summary-item"><small><?=($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation) ? 'PANEL RECOMMENDATION' : 'RECOMMENDED NEXT STEP'?></small><strong><?=esc($hasFinalDefenseComputedResult ? $overviewRecommendation : ($hasPendingFinalDefenseEvaluation ? 'Pending' : ($ratingNextStep ?: 'Pending')))?></strong></div>
+    <div class="verdict-summary-item"><small><?=($hasFinalDefenseComputedResult || $hasPendingFinalDefenseEvaluation) ? 'OFFICIAL VERDICT' : 'EVALUATION STATUS'?></small><strong><?=esc($hasFinalDefenseComputedResult ? $overviewOfficialVerdict : ($hasPendingFinalDefenseEvaluation ? 'Official Verdict Pending' : $evaluationStatus))?></strong></div>
+    <div class="verdict-summary-item"><small>PROJECT STATUS</small><strong><?=esc($hasFinalDefenseComputedResult ? 'Final Defense Evaluation Completed' : ($hasPendingFinalDefenseEvaluation ? 'Awaiting Final Defense Evaluation' : $status))?></strong></div>
   </div>
   <div class="verdict-support-grid">
     <section class="verdict-support-section">
