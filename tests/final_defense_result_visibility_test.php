@@ -8,9 +8,15 @@ foreach ([
     'e3_final_defense_panel_completion($pdo, (int) $project[\'id\'], (int) $finalSubmission[\'id\'])',
     '$finalComputedResultReady = $finalPanel[\'ready\']',
     'Evaluation Complete',
-    'Mamdani fuzzy output',
-    'Official verdict pending Chairperson confirmation',
-    'final-defense-evaluator-feedback',
+    'Mamdani Fuzzy Logic Output',
+    'The official verdict is pending IT Chairperson confirmation.',
+    'final-comments-card',
+    'final-results-summary',
+    'Final Defense Evaluation Completed',
+    'final-results-timeline',
+    'final-results-breakdown',
+    'final-fuzzy-card',
+    'final-official-card',
 ] as $marker) {
     if (!str_contains($studentPortal, $marker)) {
         throw new RuntimeException('Student Portal Final Defense result visibility marker is missing: ' . $marker);
