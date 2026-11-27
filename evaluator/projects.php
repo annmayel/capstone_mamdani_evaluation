@@ -28,7 +28,8 @@ $proposalSchemaReady = proposal_evaluation_schema_available($pdo);
 $proposalScoreColumns = array_column(proposal_criteria(), 'key');
 $revisionSchemaReady = proposal_revision_schema_available($pdo);
 foreach ($projects as &$project) {
-    $project['evaluator_proposal_status'] = 'assigned';
+    // A Final Hearing assignment does not create a proposal assignment.
+    $project['evaluator_proposal_status'] = !empty($project['proposal_assignment']) ? 'assigned' : 'not_assigned';
     $project['proposal_submission_id'] = null;
     $project['proposal_panel_complete'] = false;
     $project['revision_cycle_id'] = null;
@@ -182,7 +183,7 @@ function evaluator_content_sidebar(string $active, string $displayName, string $
                 <?php foreach ($projects as $project):
                   $assignmentStatus = strtolower((string)($project['evaluator_proposal_status'] ?? 'assigned'));
                   $statusLabel = ucwords(str_replace('_', ' ', $assignmentStatus));
-                  $statusClass = $assignmentStatus === 'submitted' ? 'completed' : 'assigned';
+                  $statusClass = $assignmentStatus === 'submitted' ? 'completed' : ($assignmentStatus === 'not_assigned' ? 'muted' : 'assigned');
                   $title = (string)($project['title'] ?? '');
                   $group = (string)($project['group_name'] ?? '');
                   $adviser = (string)($project['adviser'] ?? '');

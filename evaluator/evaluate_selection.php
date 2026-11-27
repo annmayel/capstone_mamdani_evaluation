@@ -18,10 +18,12 @@ if (final_defense_assignment_schema_available($pdo)) {
 $project = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$project) { header('Location: projects.php?evaluation_error=not_assigned'); exit; }
 $proposalSubmission = null;
+$currentProposalSubmission = null;
 $finalSubmission = null;
 $proposalReady = false;
 $proposalSubmitted = false;
 $proposalDraft = false;
+$proposalHistorical = false;
 $proposalPanelComplete = false;
 $finalReady = false;
 $finalSubmitted = false;
@@ -29,28 +31,61 @@ $finalDraft = false;
 $finalPanelComplete = false;
 $finalLockReason = 'Waiting for Final Paper';
 try {
-    $proposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
+    // The latest proposal submission is authoritative for stage transitions,
+    // while a completed score sheet may belong to an earlier proposal upload.
+    $currentProposalSubmission = latest_stored_pdf_stage_submission($pdo, $projectId, 'proposal');
+    $proposalSubmission = $currentProposalSubmission;
     $finalSubmission = latest_stage_submission($pdo, $projectId, 'final');
     $finalPdf = $finalSubmission ? submission_pdf_path((string) ($finalSubmission['stored_filename'] ?? '')) : null;
-    $proposalReady = !empty($project['proposal_assignment']) && $proposalSubmission
-        && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
-    if ($proposalReady && proposal_evaluation_schema_available($pdo)) {
+
+    // A revision upload is a separate review workflow. The proposal score sheet
+    // belongs to the proposal submission it originally evaluated, not necessarily
+    // the most recently uploaded proposal PDF. Resolve that saved submission first
+    // so a completed proposal cannot reappear as a new scoring task.
+    if (!empty($project['proposal_assignment']) && proposal_evaluation_schema_available($pdo)) {
         $evaluationStmt = $pdo->prepare(
-            'SELECT status FROM proposal_evaluations WHERE project_id = ? AND proposal_submission_id = ? AND evaluator_id = ? ORDER BY id DESC LIMIT 1'
+            "SELECT pe.status, s.*
+             FROM proposal_evaluations pe
+             INNER JOIN student_submissions s
+               ON s.id = pe.proposal_submission_id
+              AND s.project_id = pe.project_id
+              AND s.stage = 'proposal'
+             WHERE pe.project_id = ? AND pe.evaluator_id = ? AND pe.status = 'submitted'
+             ORDER BY pe.submitted_at DESC, pe.id DESC
+             LIMIT 1"
         );
-        $evaluationStmt->execute([$projectId, (int) $proposalSubmission['id'], $evaluatorId]);
-        $proposalEvaluationStatus = (string) ($evaluationStmt->fetchColumn() ?: '');
-        $proposalSubmitted = $proposalEvaluationStatus === 'submitted';
-        $proposalDraft = $proposalEvaluationStatus === 'draft';
-        $proposalPanel = proposal_panel_completion($pdo, $projectId, (int) $proposalSubmission['id']);
-        $proposalPanelComplete = $proposalPanel['ready'];
+        $evaluationStmt->execute([$projectId, $evaluatorId]);
+        $submittedProposal = $evaluationStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $submittedFilename = (string) ($submittedProposal['stored_filename'] ?? '');
+        if ($submittedProposal
+            && basename($submittedFilename) === $submittedFilename
+            && str_ends_with(strtolower($submittedFilename), '.pdf')) {
+            $proposalSubmission = $submittedProposal;
+            $proposalReady = true;
+            $proposalSubmitted = true;
+            $proposalHistorical = true;
+        } else {
+            $proposalReady = $proposalSubmission
+                && (int) ($proposalSubmission['project_id'] ?? 0) === $projectId;
+            if ($proposalReady) {
+                $draftStmt = $pdo->prepare(
+                    'SELECT status FROM proposal_evaluations WHERE project_id = ? AND proposal_submission_id = ? AND evaluator_id = ? ORDER BY id DESC LIMIT 1'
+                );
+                $draftStmt->execute([$projectId, (int) $proposalSubmission['id'], $evaluatorId]);
+                $proposalDraft = $draftStmt->fetchColumn() === 'draft';
+            }
+        }
+        if ($proposalReady) {
+            $proposalPanel = proposal_panel_completion($pdo, $projectId, (int) $proposalSubmission['id']);
+            $proposalPanelComplete = $proposalPanel['ready'];
+        }
     }
     $finalReady = $finalSubmission
         && (int) ($finalSubmission['project_id'] ?? 0) === $projectId
         && in_array($finalSubmission['status'], ['submitted', 'under_evaluation', 'accepted', 'revision_required'], true)
         && $finalPdf !== null
         && is_file($finalPdf)
-        && proposal_allows_final_submission($project, $proposalSubmission)
+        && proposal_allows_final_submission($project, $currentProposalSubmission)
         && final_defense_evaluator_is_assigned($pdo, $projectId, (int) $finalSubmission['id'], $evaluatorId);
     if ($finalReady) {
         $finalEvaluationStmt = $pdo->prepare('SELECT status FROM e3_evaluations WHERE project_id=? AND final_submission_id=? AND evaluator_id=? ORDER BY id DESC LIMIT 1');
@@ -63,7 +98,7 @@ try {
         $finalPanelComplete = $finalPanel['evaluator_count'] > 0 && $finalPanel['evaluator_count'] >= $assignedCount;
     } elseif (!$finalSubmission) {
         $finalLockReason = 'Waiting for Final Paper';
-    } elseif (!proposal_allows_final_submission($project, $proposalSubmission)) {
+    } elseif (!proposal_allows_final_submission($project, $currentProposalSubmission)) {
         $finalLockReason = 'Proposal approval required';
     } elseif ($finalPdf === null || !is_file($finalPdf)) {
         $finalLockReason = 'Final PDF unavailable';
@@ -80,9 +115,9 @@ if ($finalSubmitted) {
 } elseif ($finalDraft) {
     $finalStatusLabel = 'Draft Saved';
 }
-$proposalStatus = $proposalSubmitted ? 'Submitted' : ($proposalDraft ? 'Draft' : ($proposalReady ? 'Assigned' : 'Not Available'));
-$proposalAction = $proposalSubmitted ? 'View Submitted Evaluation' : ($proposalDraft ? 'Continue Draft' : ($proposalReady ? 'Start Proposal Evaluation' : 'Proposal PDF Required'));
-$proposalPanelStatus = $proposalPanelComplete ? 'Panel Completed' : ($proposalSubmitted ? 'Pending Panel Evaluation' : ($proposalDraft ? 'Draft saved' : 'Awaiting your evaluation'));
+$proposalStatus = $proposalHistorical ? 'Completed' : ($proposalDraft ? 'Draft' : ($proposalReady ? 'Assigned' : (!empty($project['proposal_assignment']) ? 'Not Available' : 'Not Assigned')));
+$proposalAction = $proposalHistorical ? 'View Historical Evaluation' : ($proposalDraft ? 'Continue Draft' : ($proposalReady ? 'Start Proposal Evaluation' : (!empty($project['proposal_assignment']) ? 'Proposal PDF Required' : 'Proposal evaluation not assigned')));
+$proposalPanelStatus = $proposalPanelComplete ? 'Panel Completed' : ($proposalHistorical ? 'Submitted proposal score sheet' : ($proposalDraft ? 'Draft saved' : (!empty($project['proposal_assignment']) ? 'Awaiting your evaluation' : 'Not assigned to proposal panel')));
 $finalStatus = $finalSubmitted ? 'Submitted' : ($finalDraft ? 'Draft' : ($finalReady ? 'Assigned' : 'Not Available'));
 $finalActionLabel = $finalSubmitted ? 'View Submitted Evaluation' : ($finalDraft ? 'Continue Draft' : ($finalReady ? 'Start Final Hearing Evaluation' : $finalLockReason));
 $finalPanelStatus = $finalPanelComplete ? 'Panel Completed' : ($finalSubmitted ? 'Pending Panel Evaluation' : ($finalDraft ? 'Draft saved' : $finalLockReason));
@@ -124,8 +159,8 @@ $email = trim((string) ($user['email'] ?? ''));
     </section>
     <section class="selection-grid" aria-label="Evaluation type">
       <?php if ($proposalReady): ?><a class="selection-card selection-card-proposal" href="evaluate_project.php?project_id=<?=$projectId?>&amp;proposal_submission_id=<?=esc($proposalSubmission['id'])?>"><?php else: ?><article class="selection-card selection-card-proposal is-locked" aria-disabled="true"><?php endif; ?>
-        <div class="selection-card-top"><div class="selection-card-icon proposal-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2-2V8l-6-6Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div><div class="selection-card-heading"><h2>Proposal Evaluation</h2><p>CEIT-T07A</p></div><span class="selection-status status-<?=esc(strtolower(str_replace(' ', '-', $proposalStatus)))?>"><?=esc($proposalStatus)?></span></div>
-        <p class="selection-description"><?=$proposalSubmitted ? 'View your submitted proposal score sheet, feedback, and official CEIT-T07A rubric.' : 'Evaluate the proposal manuscript and proposed project using the official CEIT-T07A score sheet.'?></p>
+        <div class="selection-card-top"><div class="selection-card-icon proposal-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2-2V8l-6-6Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div><div class="selection-card-heading"><h2><?=$proposalHistorical ? 'Proposal Evaluation History' : 'Proposal Evaluation'?></h2><p>CEIT-T07A</p></div><span class="selection-status status-<?=esc(strtolower(str_replace(' ', '-', $proposalStatus)))?>"><?=esc($proposalStatus)?></span></div>
+        <p class="selection-description"><?=$proposalHistorical ? 'Your submitted proposal score sheet is read-only and remains separate from Final Hearing evaluation.' : (!empty($project['proposal_assignment']) ? 'Evaluate the proposal manuscript and proposed project using the official CEIT-T07A score sheet.' : 'You are assigned to Final Hearing only; proposal scoring is not part of this assignment.')?></p>
         <dl class="selection-details"><div><dt>Rubric</dt><dd>CEIT-T07A Proposal Evaluation</dd></div><div><dt>Total points</dt><dd><?=esc((string) $proposalPoints)?> points</dd></div><div><dt>Panel status</dt><dd><?=esc($proposalPanelStatus)?></dd></div></dl>
         <span class="selection-action"><?=$proposalReady ? '<span aria-hidden="true">&#128065;</span>' : '<span aria-hidden="true">&#128274;</span>'?> <?=esc($proposalAction)?></span>
       <?php if ($proposalReady): ?></a><?php else: ?></article><?php endif; ?>

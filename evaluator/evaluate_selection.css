@@ -36,6 +36,7 @@ a.selection-card:hover { transform:translateY(-3px); box-shadow:0 18px 38px rgba
 .selection-status.status-draft { background:#fff0cf; color:#8b5b14; }
 .selection-status.status-assigned { background:#e0effa; color:#285c7b; }
 .selection-status.status-not-available { background:#f6e6d4; color:#86551f; }
+.selection-status.status-not-assigned { background:#edf0f0; color:#526665; }
 .selection-description { margin:25px 0 20px; color:#486060; font-size:14px; line-height:1.65; }
 .selection-details { display:grid; gap:0; margin:0; overflow:hidden; border:1px solid #d9e5df; border-radius:12px; background:rgba(255,255,255,.56); }
 .selection-card-final .selection-details { border-color:#e9ddd0; }
