@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/final_defense_assignments.php';
+
 function e3_criteria(): array
 {
     return [
@@ -234,17 +236,24 @@ function e3_submit_evaluation(
     }
 }
 
-function e3_consolidated(PDO $pdo, int $projectId, ?int $submissionId = null): array
+function e3_consolidated(PDO $pdo, int $projectId, ?int $submissionId = null, bool $assignedFinalPanelOnly = false): array
 {
     $criteria = e3_criteria();
     $consolidated = [];
-    $sql = 'SELECT * FROM e3_evaluations WHERE project_id = ? AND status = ?';
+    $sql = $assignedFinalPanelOnly
+        ? 'SELECT e.* FROM e3_evaluations e
+           INNER JOIN final_defense_evaluator_assignments a
+             ON a.project_id = e.project_id
+            AND a.final_submission_id = e.final_submission_id
+            AND a.evaluator_id = e.evaluator_id
+           WHERE e.project_id = ? AND e.status = ?'
+        : 'SELECT * FROM e3_evaluations WHERE project_id = ? AND status = ?';
     $params = [$projectId, 'submitted'];
     if ($submissionId !== null) {
-        $sql .= ' AND final_submission_id = ?';
+        $sql .= $assignedFinalPanelOnly ? ' AND e.final_submission_id = ?' : ' AND final_submission_id = ?';
         $params[] = $submissionId;
     }
-    $sql .= ' ORDER BY id';
+    $sql .= $assignedFinalPanelOnly ? ' ORDER BY e.id' : ' ORDER BY id';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $evaluations = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -264,5 +273,23 @@ function e3_consolidated(PDO $pdo, int $projectId, ?int $submissionId = null): a
         'criteria' => $consolidated,
         'calculated_score' => $calculated,
         'evaluator_count' => count($evaluations),
+    ];
+}
+
+/**
+ * Completion and consolidation for the Chairperson's exact Final Defense
+ * assignment panel. This does not trust a hard-coded panel size or include
+ * submitted E3 rows from another final submission.
+ */
+function e3_final_defense_panel_completion(PDO $pdo, int $projectId, int $finalSubmissionId): array
+{
+    $progress = final_defense_panel_progress($pdo, $projectId, $finalSubmissionId);
+    $consolidated = e3_consolidated($pdo, $projectId, $finalSubmissionId, true);
+
+    return [
+        'assigned_count' => $progress['assigned_count'],
+        'submitted_count' => $progress['submitted_count'],
+        'ready' => $progress['complete'],
+        'consolidated' => $consolidated,
     ];
 }

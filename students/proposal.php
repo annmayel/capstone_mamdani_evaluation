@@ -20,6 +20,9 @@ $proposalEvaluations = [];
 $finalEvaluations = [];
 $finalVerdict = null;
 $finalConsolidated = null;
+$finalPanel = null;
+$finalComputedResultReady = false;
+$finalEvaluatorNames = [];
 $proposalPanelTotal = null;
 $proposalPercentage = null;
 $proposalRecommendation = null;
@@ -108,21 +111,26 @@ if ($project) {
         }
     }
 
-    $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
-    $finalVerdictStmt->execute([(int) $project['id']]);
+    $finalVerdictStmt = $pdo->prepare('SELECT * FROM e3_final_verdicts WHERE project_id = ? AND final_submission_id = ? AND published_at IS NOT NULL ORDER BY id DESC LIMIT 1');
+    $finalVerdictStmt->execute([(int) $project['id'], (int) ($finalSubmission['id'] ?? 0)]);
     $candidateFinalVerdict = $finalVerdictStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    if ($candidateFinalVerdict && ($finalSubmission ? !empty($candidateFinalVerdict['final_submission_id']) : empty($candidateFinalVerdict['final_submission_id']))) {
+    if ($candidateFinalVerdict && $finalSubmission) {
         $finalVerdict = $candidateFinalVerdict;
     }
-    $finalResultSubmissionId = $finalVerdict ? (int) ($finalVerdict['final_submission_id'] ?? 0) : (int) ($finalSubmission['id'] ?? 0);
-    if ($finalVerdict && $finalResultSubmissionId > 0) {
-        $finalEvalStmt = $pdo->prepare('SELECT * FROM e3_evaluations WHERE project_id = ? AND final_submission_id = ? AND status = ? ORDER BY id');
-        $finalEvalStmt->execute([(int) $project['id'], $finalResultSubmissionId, 'submitted']);
-        $finalEvaluations = $finalEvalStmt->fetchAll(PDO::FETCH_ASSOC);
-        $finalConsolidated = e3_consolidated($pdo, (int) $project['id'], $finalResultSubmissionId);
-    } elseif ($finalVerdict) {
-        $finalConsolidated = e3_consolidated($pdo, (int) $project['id']);
-        $finalEvaluations = $finalConsolidated['evaluations'];
+    if ($finalSubmission && final_defense_assignment_schema_available($pdo)) {
+        $finalPanel = e3_final_defense_panel_completion($pdo, (int) $project['id'], (int) $finalSubmission['id']);
+        $finalComputedResultReady = $finalPanel['ready'];
+        if ($finalComputedResultReady) {
+            $finalConsolidated = $finalPanel['consolidated'];
+            $finalEvaluations = $finalConsolidated['evaluations'];
+            $finalEvaluatorStmt = $pdo->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
+            foreach ($finalEvaluations as $finalEvaluation) {
+                $evaluatorId = (int) ($finalEvaluation['evaluator_id'] ?? 0);
+                if ($evaluatorId <= 0 || isset($finalEvaluatorNames[$evaluatorId])) continue;
+                $finalEvaluatorStmt->execute([$evaluatorId]);
+                $finalEvaluatorNames[$evaluatorId] = (string) ($finalEvaluatorStmt->fetchColumn() ?: 'Final Hearing evaluator');
+            }
+        }
     }
 }
 
@@ -152,7 +160,9 @@ $finalDefenseState = !$finalUnlocked
     ? ['label' => 'Locked', 'class' => 'muted', 'message' => 'Final Defense becomes available after the Proposal Stage is completed.']
     : (!$finalSubmission
         ? ['label' => 'Available', 'class' => 'success', 'message' => 'Proposal stage is complete. You can submit your Final Paper and Project for the Final Defense.']
-        : match ((string) $finalSubmission['status']) {
+        : ($finalComputedResultReady && !$finalVerdict
+            ? ['label' => 'Evaluation Complete', 'class' => 'success', 'message' => 'All assigned Final Hearing evaluators submitted their evaluations. Your computed panel result is available while the IT Chairperson reviews the official verdict.']
+            : match ((string) $finalSubmission['status']) {
             'submitted' => ['label' => 'Submitted', 'class' => 'info', 'message' => 'Your Final Defense submission is waiting for IT Chairperson review and evaluator assignment.'],
             'under_evaluation' => $finalEvaluationStarted
                 ? ['label' => 'Under Review', 'class' => 'warning', 'message' => 'Final Hearing evaluators are reviewing your Final Defense submission.']
@@ -160,7 +170,7 @@ $finalDefenseState = !$finalUnlocked
             'accepted' => ['label' => 'Accepted', 'class' => 'success', 'message' => 'Your Final Defense result has been accepted.'],
             'revision_required', 'revision_requested' => ['label' => 'Revision Required', 'class' => 'warning', 'message' => 'The IT Chairperson requested a revised Final Defense submission.'],
             default => ['label' => $latestFinalStatus, 'class' => 'info', 'message' => 'Your Final Defense submission is being processed.'],
-        });
+        }));
 $latestFinalStatus = $finalDefenseState['label'];
 $displayName = $user['full_name'] ?? 'Student';
 $initial = strtoupper(substr($displayName, 0, 1));
@@ -438,16 +448,23 @@ $revisionProgressLabel = match ($revisionUploadState) {
           <section class="portal-panel proposal-student-result">
             <div class="panel-heading"><div><span class="eyebrow">FINAL HEARING EVALUATION RESULTS</span><h3>Final Hearing Evaluation Results</h3></div><strong class="panel-score"><?=$finalConsolidated && $finalConsolidated['calculated_score'] !== null ? number_format((float) $finalConsolidated['calculated_score'], 2) . '%' : 'Pending'?></strong></div>
             <?php if (!$finalConsolidated || $finalConsolidated['calculated_score'] === null): ?>
-              <div class="empty-state">Final hearing results will appear after a Final Paper is submitted and evaluator scoring is complete.</div>
+              <div class="empty-state">Final hearing results will appear after every evaluator assigned to this Final Defense submission has submitted an evaluation.<?php if ($finalPanel): ?> <?=esc((string) $finalPanel['submitted_count'])?> of <?=esc((string) $finalPanel['assigned_count'])?> assigned evaluators have submitted.<?php endif; ?></div>
             <?php else: ?>
               <?php $finalRecommendation = e3_stage_verdict_from_score((float) $finalConsolidated['calculated_score']); ?>
               <div class="detail-grid">
                 <div><small>Total score</small><strong><?=number_format((float) $finalConsolidated['calculated_score'], 2)?> / 100</strong></div>
                 <div><small>Percentage</small><strong><?=number_format((float) $finalConsolidated['calculated_score'], 2)?>%</strong></div>
+                <div><small>Mamdani fuzzy output</small><strong><?=number_format((float) $finalRecommendation['fuzzy']['defuzz'], 2)?> / 100</strong></div>
                 <div><small>Recommended verdict</small><strong><?=esc($finalRecommendation['label'])?></strong></div>
+                <div><small>Evaluation completion</small><strong><?=esc((string) ($finalPanel['submitted_count'] ?? 0))?> / <?=esc((string) ($finalPanel['assigned_count'] ?? 0))?> submitted</strong></div>
                 <div><small>Chairperson confirmation</small><strong><?=$finalVerdict ? 'Confirmed' : 'Pending'?></strong></div>
               </div>
-              <?php if ($finalVerdict): ?><div class="proposal-student-revisions"><strong>Official verdict: <?=esc($finalVerdict['verdict_label'])?></strong><p>Confirmed <?=esc($formatDate($finalVerdict['published_at']))?></p></div><?php else: ?><div class="proposal-student-revisions"><strong>Official verdict pending Chairperson confirmation</strong></div><?php endif; ?>
+              <div class="proposal-student-revisions final-defense-result-state"><strong>Computed Final Hearing result complete</strong><p>This score and Mamdani recommendation are calculated from every evaluator assigned to this Final Defense submission.<?=$finalVerdict ? '' : ' The official verdict remains pending IT Chairperson confirmation.'?></p></div>
+              <?php foreach ($finalConsolidated['criteria'] as $code => $score): $criterion = e3_criteria()[$code]; ?><div class="proposal-student-criterion"><div><strong><?=esc($code)?> · <?=esc($criterion['label'])?></strong><small><?=number_format((float) $score, 2)?> / <?=esc((string) $criterion['maximum'])?></small></div></div><?php endforeach; ?>
+              <?php foreach ($finalEvaluations as $evaluation): ?>
+                <div class="proposal-student-revisions final-defense-evaluator-feedback"><strong><?=esc($finalEvaluatorNames[(int) $evaluation['evaluator_id']] ?? 'Final Hearing evaluator')?></strong><p>Final Hearing score: <?=number_format((float) $evaluation['total_score'], 2)?> / 100</p><?php if (trim((string) ($evaluation['remarks'] ?? '')) !== ''): ?><p><strong>Comments and recommendations:</strong><br><?=nl2br(esc($evaluation['remarks']))?></p><?php endif; ?><?php if (trim((string) ($evaluation['revisions'] ?? '')) !== ''): ?><p><strong>Criteria feedback:</strong><br><?=nl2br(esc($evaluation['revisions']))?></p><?php endif; ?></div>
+              <?php endforeach; ?>
+              <?php if ($finalVerdict): ?><div class="proposal-student-revisions"><strong>Official verdict: <?=esc($finalVerdict['verdict_label'])?></strong><p>Confirmed <?=esc($formatDate($finalVerdict['published_at']))?></p></div><?php else: ?><div class="proposal-student-revisions"><strong>Official verdict pending Chairperson confirmation</strong><p>The IT Chairperson retains authority to confirm the final official result.</p></div><?php endif; ?>
               <?php if ($finalVerdict && !empty($finalVerdict['revisions'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson required revisions</strong><p><?=nl2br(esc($finalVerdict['revisions']))?></p></div><?php endif; ?>
               <?php if ($finalVerdict && !empty($finalVerdict['chairperson_comments'])): ?><div class="proposal-student-revisions"><strong>IT Chairperson comments</strong><p><?=nl2br(esc($finalVerdict['chairperson_comments']))?></p></div><?php endif; ?>
             <?php endif; ?>
