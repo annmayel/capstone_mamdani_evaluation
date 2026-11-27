@@ -60,10 +60,31 @@
 
 .final-results-summary{padding:18px 0;}
 .final-results-summary article{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
   padding:13px;
   border-radius:9px;
   box-shadow:none;
 }
+.final-summary-icon{
+  display:grid;
+  place-items:center;
+  flex:0 0 27px;
+  width:27px;
+  height:27px;
+  border-radius:9px;
+  background:#edf8ef;
+  color:#228944;
+  font-size:16px;
+  font-weight:800;
+  line-height:1;
+}
+.final-summary-icon.is-fuzzy{background:#eaf4ff;color:#2877d3;}
+.final-summary-icon.is-output{background:#edf9f2;color:#20905c;}
+.final-summary-icon.is-recommendation{background:#eff9ef;color:#328d45;}
+.final-summary-icon.is-status{background:#e7f8f0;color:#16855a;}
+.final-results-summary article>div{min-width:0;}
 .final-results-summary small{font-weight:700;}
 .final-results-summary strong{margin-top:5px;font-size:13px;}
 .final-results-summary em{margin-top:4px;font-size:9px;}
