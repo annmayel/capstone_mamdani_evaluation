@@ -126,6 +126,114 @@ function e3_validate_scores(array $input, bool $requireComplete = true): array
     return ['scores' => $scores, 'total' => round($total, 2), 'errors' => $errors];
 }
 
+/**
+ * E3 submissions also create a history row. Older databases used an enum that
+ * predates the E3 workflow, so detect that incompatibility before starting the
+ * final-hearing save transaction. Migration 022 is the non-destructive repair.
+ */
+function e3_evaluation_history_supports_e3(PDO $pdo): bool
+{
+    $column = $pdo->query("SHOW COLUMNS FROM `evaluation_history` LIKE 'evaluation_type'")
+        ->fetch(PDO::FETCH_ASSOC);
+
+    return e3_evaluation_history_type_supports_e3((string) ($column['Type'] ?? ''));
+}
+
+function e3_evaluation_history_type_supports_e3(string $columnType): bool
+{
+    return preg_match("/(?:^|,)'e3'(?:,|\))/", strtolower($columnType)) === 1;
+}
+
+/**
+ * Save one evaluator's submitted Final Hearing sheet and its matching history
+ * record atomically. The assignment update includes the exact final submission
+ * ID, so a project-level proposal assignment can never authorize an E3 save.
+ *
+ * @return int The created or updated E3 evaluation ID.
+ */
+function e3_submit_evaluation(
+    PDO $pdo,
+    int $projectId,
+    int $evaluatorId,
+    int $finalSubmissionId,
+    array $scores,
+    float $total,
+    ?string $remarks,
+    ?string $revisions,
+    string $historyRating
+): int {
+    $criteria = e3_criteria();
+    foreach ($criteria as $criterion) {
+        if (!array_key_exists($criterion['key'], $scores) || $scores[$criterion['key']] === null) {
+            throw new InvalidArgumentException('Every E3 criterion must be scored before submission.');
+        }
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $existingStmt = $pdo->prepare(
+            'SELECT id, status FROM e3_evaluations
+             WHERE project_id=? AND evaluator_id=? AND final_submission_id=?
+             ORDER BY id DESC LIMIT 1'
+        );
+        $existingStmt->execute([$projectId, $evaluatorId, $finalSubmissionId]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($existing && $existing['status'] === 'submitted') {
+            throw new LogicException('This E3 evaluation has already been submitted and cannot be edited.');
+        }
+
+        $values = [];
+        foreach ($criteria as $criterion) {
+            $values[] = $scores[$criterion['key']];
+        }
+        $submittedAt = date('Y-m-d H:i:s');
+        if ($existing) {
+            $update = $pdo->prepare(
+                'UPDATE e3_evaluations SET
+                 fr1_1=?,fr1_2=?,fr1_3=?,fr1_4=?,arc2_1=?,arc2_2=?,arc2_3=?,
+                 dp3_1=?,dp3_2=?,pmd4_1=?,pmd4_2=?,pmd4_3=?,
+                 total_score=?,remarks=?,revisions=?,status=?,submitted_at=? WHERE id=?'
+            );
+            $update->execute(array_merge($values, [$total, $remarks, $revisions, 'submitted', $submittedAt, (int) $existing['id']]));
+            $evaluationId = (int) $existing['id'];
+        } else {
+            $insert = $pdo->prepare(
+                'INSERT INTO e3_evaluations(
+                 project_id,evaluator_id,final_submission_id,
+                 fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,
+                 total_score,remarks,revisions,status,submitted_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+            );
+            $insert->execute(array_merge([$projectId, $evaluatorId, $finalSubmissionId], $values, [$total, $remarks, $revisions, 'submitted', $submittedAt]));
+            $evaluationId = (int) $pdo->lastInsertId();
+        }
+
+        $assignment = $pdo->prepare(
+            'UPDATE final_defense_evaluator_assignments SET status=?
+             WHERE project_id=? AND final_submission_id=? AND evaluator_id=?'
+        );
+        $assignment->execute(['completed', $projectId, $finalSubmissionId, $evaluatorId]);
+        if ($assignment->rowCount() !== 1) {
+            throw new RuntimeException('The Final Defense assignment is no longer available for this evaluator.');
+        }
+
+        $history = $pdo->prepare(
+            'INSERT INTO evaluation_history(
+             project_id,evaluator_id,evaluation_type,project_score,paper_score,overall_score,overall_rating
+            ) VALUES(?,?,?,?,?,?,?)'
+        );
+        $history->execute([$projectId, $evaluatorId, 'e3', $total, $total, $total, $historyRating]);
+        $pdo->commit();
+
+        return $evaluationId;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
+}
+
 function e3_consolidated(PDO $pdo, int $projectId, ?int $submissionId = null): array
 {
     $criteria = e3_criteria();

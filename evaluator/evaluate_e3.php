@@ -47,6 +47,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
  if(!csrf_check($_POST['csrf']??'')){$errors[]='Your session could not be verified. Refresh the page and try again.';}
   elseif($officialResult){$errors[]='The IT Chairperson has already confirmed the official verdict for this Final Paper.';}
   elseif($existing&&$existing['status']==='submitted'){$errors[]='This E3 evaluation has already been submitted and cannot be edited.';}
+  elseif(($_POST['flow']??'summary')==='submit'&&!e3_evaluation_history_supports_e3($pdo)){$errors[]='The Final Hearing history schema is not ready. Apply sql/migrations/022_e3_evaluation_history_type.sql before submitting this evaluation.';}
  else{
   foreach($criteria as$code=>$criterion){$key=$criterion['key'];if(array_key_exists($key,$_POST))$form[$key]=(string)$_POST[$key];$commentKey='comment_'.$criterion['key'];$commentValues[$code]=trim((string)($_POST[$commentKey]??''));}
   $form['remarks']=trim((string)($_POST['remarks']??''));$action=(string)($_POST['action']??'');$isDraft=$action==='draft';$validation=e3_validate_scores($_POST,!$isDraft);
@@ -62,28 +63,16 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $pdo->commit();$_SESSION['e3_flash']='E3 evaluation draft saved.';header('Location: evaluate_e3.php?project_id='.$projectId.'&final_submission_id='.(int)$finalSubmission['id']);exit;
    }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();log_workflow_database_error('e3_evaluation_draft','save_evaluator_draft',$e);$errors[]='The E3 evaluation draft could not be saved.';}
   }
-  if(!$errors&&$flow==='submit'){
-   $scores=$validation['scores'];$total=$validation['total'];
-   $commentLines=[];
-   foreach($criteria as$code=>$criterion){if($commentValues[$code]!=='')$commentLines[]=$code.' — '.$commentValues[$code];}
-   $commentText=implode("\n",$commentLines);$remarks=$form['remarks']!==''?$form['remarks']:null;
-   try{
-    $pdo->beginTransaction();$values=[];
-    foreach($criteria as$criterion){$key=$criterion['key'];$values[$key]=isset($scores[$key])?$scores[$key]:null;}
-    if($existing){
-     $u=$pdo->prepare('UPDATE e3_evaluations SET fr1_1=?,fr1_2=?,fr1_3=?,fr1_4=?,arc2_1=?,arc2_2=?,arc2_3=?,dp3_1=?,dp3_2=?,pmd4_1=?,pmd4_2=?,pmd4_3=?,total_score=?,remarks=?,revisions=?,status=?,submitted_at=? WHERE id=?');
-     $existingId=(int)$existing['id'];
-     $updateValues=[$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s'),$existingId];
-     $u->execute($updateValues);
-    }else{
-     $i=$pdo->prepare('INSERT INTO e3_evaluations(project_id,evaluator_id,final_submission_id,fr1_1,fr1_2,fr1_3,fr1_4,arc2_1,arc2_2,arc2_3,dp3_1,dp3_2,pmd4_1,pmd4_2,pmd4_3,total_score,remarks,revisions,status,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-     $i->execute([$projectId,$evaluatorId,(int)$finalSubmission['id'],$values['fr1_1'],$values['fr1_2'],$values['fr1_3'],$values['fr1_4'],$values['arc2_1'],$values['arc2_2'],$values['arc2_3'],$values['dp3_1'],$values['dp3_2'],$values['pmd4_1'],$values['pmd4_2'],$values['pmd4_3'],$total,$remarks,$commentText,'submitted',date('Y-m-d H:i:s')]);
-    }
-    $pdo->prepare('UPDATE final_defense_evaluator_assignments SET status=? WHERE project_id=? AND final_submission_id=? AND evaluator_id=?')->execute(['completed',$projectId,(int)$finalSubmission['id'],$evaluatorId]);
-    $verdictForHistory=e3_stage_verdict_from_score($total);
-    $pdo->prepare('INSERT INTO evaluation_history(project_id,evaluator_id,evaluation_type,project_score,paper_score,overall_score,overall_rating) VALUES(?,?,?,?,?,?,?)')->execute([$projectId,$evaluatorId,'e3',$total,$total,$total,$verdictForHistory['label']]);
-    $pdo->commit();$_SESSION['e3_flash']='E3 evaluation submitted. Total: '.number_format($total,2).'/100.';header('Location: evaluate_e3.php?project_id='.$projectId);exit;
-   }catch(Throwable$e){if($pdo->inTransaction())$pdo->rollBack();log_workflow_database_error('e3_evaluation_submit','save_evaluator_scores_and_comments',$e);$errors[]='The E3 evaluation could not be saved.';}
+   if(!$errors&&$flow==='submit'){
+    $scores=$validation['scores'];$total=$validation['total'];
+    $commentLines=[];
+   foreach($criteria as$code=>$criterion){if($commentValues[$code]!=='')$commentLines[]=$code." \xE2\x80\x94 ".$commentValues[$code];}
+    $commentText=implode("\n",$commentLines);$remarks=$form['remarks']!==''?$form['remarks']:null;
+    try{
+     $verdictForHistory=e3_stage_verdict_from_score($total);
+     e3_submit_evaluation($pdo,$projectId,$evaluatorId,(int)$finalSubmission['id'],$scores,$total,$remarks,$commentText,$verdictForHistory['label']);
+     $_SESSION['e3_flash']='E3 evaluation submitted. Total: '.number_format($total,2).'/100.';header('Location: evaluate_e3.php?project_id='.$projectId);exit;
+    }catch(LogicException $e){$errors[]=$e->getMessage();}catch(Throwable$e){log_workflow_database_error('e3_evaluation_submit','save_evaluator_scores_and_comments',$e);$errors[]='The E3 evaluation could not be saved.';}
   }
  }
 }
