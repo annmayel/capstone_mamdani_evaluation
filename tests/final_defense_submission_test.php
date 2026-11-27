@@ -13,6 +13,13 @@ if (!proposal_allows_final_submission($panelAcceptedRevision, $acceptedProposal)
     throw new RuntimeException('Final Defense must become available immediately after the original panel accepts the revision.');
 }
 
+$liveAcceptedRevision = [
+    'proposal_revision_accepted_submission_id' => 15,
+];
+if (!proposal_allows_final_submission($liveAcceptedRevision, $acceptedProposal)) {
+    throw new RuntimeException('A live accepted revision must not remain locked while waiting for a separate Chairperson record.');
+}
+
 $revisionStillPending = $panelAcceptedRevision;
 $revisionStillPending['proposal_revision_accepted_submission_id'] = null;
 if (proposal_allows_final_submission($revisionStillPending, $acceptedProposal)) {

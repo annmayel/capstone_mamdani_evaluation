@@ -124,6 +124,15 @@ function latest_stored_pdf_stage_submission(PDO $pdo, int $projectId, string $st
 
 function proposal_allows_final_submission(array $project, ?array $proposalSubmission): bool
 {
+    // A unanimous original-panel acceptance completes a revision-required
+    // proposal. Do not require a second Chairperson confirmation merely to
+    // move that accepted revision to Final Defense.
+    if ($proposalSubmission !== null
+        && !empty($project['proposal_revision_accepted_submission_id'])
+        && (int) $project['proposal_revision_accepted_submission_id'] === (int) $proposalSubmission['id']) {
+        return true;
+    }
+
     if (empty($project['proposal_confirmed_at']) || empty($project['proposal_official_verdict'])) {
         return false;
     }
@@ -133,10 +142,7 @@ function proposal_allows_final_submission(array $project, ?array $proposalSubmis
         return true;
     }
 
-    return in_array($project['proposal_official_verdict'], ['PASSED/APPROVED (No Revision)', 'PASSED/APPROVED (Minor Revision)', 'PASSED/APPROVED (Major Revision)'], true)
-        && $proposalSubmission !== null
-        && !empty($project['proposal_revision_accepted_submission_id'])
-        && (int) $project['proposal_revision_accepted_submission_id'] === (int) $proposalSubmission['id'];
+    return false;
 }
 
 function stage_submission_status_label(?array $submission): string

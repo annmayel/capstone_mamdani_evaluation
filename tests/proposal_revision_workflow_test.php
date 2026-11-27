@@ -31,6 +31,11 @@ $acceptedProject = [
 ];
 if (!proposal_allows_final_submission($acceptedProject, ['id' => 15])) throw new RuntimeException('An accepted original-panel revision must unlock Final Defense without another Chairperson acceptance.');
 if (proposal_allows_final_submission($acceptedProject, ['id' => 14])) throw new RuntimeException('Final Defense must bind to the accepted revision submission, not the original proposal.');
+$liveAcceptedButLocked = [
+    'proposal_revision_accepted_submission_id' => 15,
+];
+if (!proposal_allows_final_submission($liveAcceptedButLocked, ['id' => 15])) throw new RuntimeException('A live accepted revision must unlock Final Defense even when no separate Chairperson confirmation is recorded.');
+if (proposal_allows_final_submission($liveAcceptedButLocked, ['id' => 14])) throw new RuntimeException('An accepted revision pointer must not unlock the original proposal submission.');
 $pdo->exec("INSERT INTO projects (id,student_id) VALUES (6,100)");
 $pdo->exec("INSERT INTO student_submissions VALUES (15,6,'proposal','submitted')");
 $pdo->exec("INSERT INTO proposal_revision_cycles VALUES (42,6,14,15,1,'accepted','2026-11-26 12:00:00','2026-11-26 12:02:00')");
