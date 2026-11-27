@@ -126,6 +126,7 @@ $finalDefensePanel = null;
 $finalDefenseComputedResult = null;
 $finalDefenseRecommendation = null;
 $finalDefenseOfficialVerdict = null;
+$finalDefenseFeedback = [];
 $hasFinalDefenseComputedResult = false;
 $hasPendingFinalDefenseEvaluation = false;
 if ($project) {
@@ -158,6 +159,17 @@ if ($project) {
                 $finalDefenseRecommendation = e3_stage_verdict_from_score(
                     (float) $finalDefenseComputedResult['calculated_score']
                 );
+                foreach ($finalDefenseComputedResult['evaluations'] as $finalEvaluation) {
+                    $remarks = trim((string) ($finalEvaluation['remarks'] ?? ''));
+                    $revisions = trim((string) ($finalEvaluation['revisions'] ?? ''));
+                    if ($remarks !== '' || $revisions !== '') {
+                        $finalDefenseFeedback[] = [
+                            'remarks' => $remarks,
+                            'revisions' => $revisions,
+                            'submitted_at' => $finalEvaluation['submitted_at'] ?? null,
+                        ];
+                    }
+                }
             }
 
             $finalVerdictStmt = $pdo->prepare(
@@ -1208,4 +1220,5 @@ $uploadMessageKey = isset($_GET['uploaded']) ? 'uploaded' : ($_GET['error'] ?? '
     <?php endif; ?>
   </section>
 <?php endif; ?>
+<?php if ($view === 'results'): require __DIR__ . '/final_defense_results_section.php'; endif; ?>
 </div></main></div></body></html>
